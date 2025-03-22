@@ -1,168 +1,210 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
-import { fetchGame, updateGameState } from '../../store/gameSlice';
+import { DndContext, DragOverlay, closestCorners } from '@dnd-kit/core';
+import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
+import { fetchGame } from '../../store/gameSlice';
 import { useParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import DroppableCell from '../../components/game/DroppableCell';
+import PuzzlePiece from '../../components/game/PuzzlePiece';
+import { ChevronDown, ChevronUp, ZoomIn, ZoomOut, HelpCircle } from 'lucide-react';
+import Timer from '../../components/game/Timer';
+import HintButton from '../../components/game/HintButton';
+const getRowCol = (position, gridSize) => ({
+  row: Math.floor(position / gridSize),
+  col: position % gridSize,
+});
 
-// Droppable Cell Component
-const DroppableCell = ({ children, id }) => {
-  const { setNodeRef } = useDroppable({
-    id: `cell-${id}`,
-  });
 
-  return (
-    <div
-      ref={setNodeRef}
-      className="border border-dashed border-gray-300 relative"
-    >
-      {children}
-    </div>
-  );
-};
-
-// Puzzle Piece Component
-const PuzzlePiece = ({ id, imageUrl, pieceData, isInBank }) => {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
-    id: id,
-  });
-
-  const parsedData = typeof pieceData === 'string' ? JSON.parse(pieceData) : pieceData;
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    width: `${parsedData.width}px`,
-    height: `${parsedData.height}px`,
-    backgroundImage: `url(${imageUrl})`,
-    backgroundPosition: `-${parsedData.x}px -${parsedData.y}px`,
-    cursor: 'grab',
-    touchAction: 'none',
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`absolute ${isInBank ? 'rounded-lg shadow-md' : ''}`}
-      {...listeners}
-      {...attributes}
-    />
-  );
-};
-
-// Main Game Component
 const GameRoom = () => {
   const { gameId } = useParams();
   const dispatch = useDispatch();
   const theme = useSelector((state) => state.theme.current);
-  const { data: game, status } = useSelector((state) => state.game);
-  const containerRef = useRef(null);
-  const [scale, setScale] = useState(1);
+  const { data: game } = useSelector((state) => state.game);
+  const [activeId, setActiveId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+  const [pieces, setPieces] = useState([]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [timer, setTimer] = useState(0);
+  const [hintsUsed, setHintsUsed] = useState(0);
+
+  const gridSize = 4; // Adjustable based on difficulty
+  const cellSize = useMemo(() => 100 / zoomLevel, [zoomLevel]);
 
   useEffect(() => {
-    console.log("Game ID: ", gameId)
     dispatch(fetchGame(gameId));
   }, [dispatch, gameId]);
 
   useEffect(() => {
-    if (containerRef.current) {
-      const containerWidth = containerRef.current.clientWidth;
-      const scale = Math.min(containerWidth / 1000, 1);
-      setScale(scale);
+    if (game?.puzzle?.pieces) {
+      const shuffledPieces = [...game.puzzle.pieces]
+        .sort(() => Math.random() - 0.5)
+        .map((piece, index) => ({
+          ...piece,
+          id: `piece-${index}`,
+          currentPosition: null,
+        }));
+      setPieces(shuffledPieces);
     }
+  }, [game]);
+
+  const handleDragStart = useCallback((event) => {
+    setActiveId(event.active.id);
   }, []);
 
-  const handleDragEnd = (event) => {
+  const handleDragOver = useCallback((event) => {
+    setDragOverId(event.over?.id || null);
+  }, []);
+
+  const handleDragEnd = useCallback((event) => {
     const { active, over } = event;
-    
-    if (!active || !over) return;
+    setActiveId(null);
+    setDragOverId(null);
+
+    if (!over) return;
 
     const pieceId = active.id;
     const targetId = over.id;
-    
+
     if (targetId.startsWith('cell-')) {
       const position = parseInt(targetId.split('-')[1]);
-      
-      dispatch(updateGameState({
-        gameId: gameId,
-        pieceId: pieceId,
-        position: position
-      }));
+      const { row, col } = getRowCol(position, gridSize);
+
+      setPieces((prevPieces) =>
+        prevPieces.map((piece) => {
+          if (piece.id === pieceId) {
+            return { ...piece, currentPosition: { row, col } };
+          }
+          if (piece.currentPosition?.row === row && piece.currentPosition?.col === col) {
+            return { ...piece, currentPosition: null };
+          }
+          return piece;
+        })
+      );
     }
-  };
+  }, [gridSize]);
+
+  const handleHint = useCallback(() => {
+    setHintsUsed((prev) => prev + 1);
+    // Logic to show a hint (e.g., highlight a correct piece)
+  }, []);
+
+  const gridPieces = useMemo(() => pieces.filter((p) => p.currentPosition !== null), [pieces]);
+  const bankPieces = useMemo(() => pieces.filter((p) => p.currentPosition === null), [pieces]);
 
   if (!game || !game.puzzle) {
-    return (
-      <div className="p-6 rounded-lg bg-yellow-50 text-yellow-600">
-        <h2 className="text-lg font-semibold">No Game Found</h2>
-        <p>Please make sure a game has been started.</p>
-      </div>
-    );
+    return <div className="p-6 rounded-lg bg-yellow-50 text-yellow-600">Loading...</div>;
   }
 
-  const gridSize = Math.sqrt(game.puzzle.pieces.length);
-  console.log("Game: ", game)
-  console.log("Game Size: ", gridSize)
-
   return (
-    <div ref={containerRef} className={`p-6 rounded-lg shadow-lg ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
-      <h2 className="text-2xl font-bold mb-4">Puzzle Game</h2>
+    <div className={`h-screen w-screen p-6 rounded-lg shadow-lg ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Puzzle Game</h2>
+        <Timer timer={timer} setTimer={setTimer} />
+      </div>
 
-      <DndContext onDragEnd={handleDragEnd}>
-        <div className="flex flex-col gap-6">
+      <DndContext
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="h-full flex flex-col md:flex-row gap-6">
           {/* Puzzle Grid */}
-          <div
-            className="grid relative bg-gray-100 rounded-lg"
-            style={{
-              width: `${1000 * scale}px`,
-              height: `${1000 * scale}px`,
-              gridTemplate: `repeat(${gridSize}, 1fr) / repeat(${gridSize}, 1fr)`
-            }}
-          >
-            {Array.from({ length: game.puzzle.pieces.length }, (_, i) => (
-              <DroppableCell key={`cell-${i}`} id={i}>
-                {game.puzzle.pieces.find(p => p.currentPosition === i) && (
-                  <PuzzlePiece
-                    id={game.puzzle.pieces.find(p => p.currentPosition === i)._id}
-                    imageUrl={game.puzzle.originalImage.url}
-                    pieceData={game.puzzle.pieces.find(p => p.currentPosition === i).imageData}
-                    isInBank={false}
-                  />
-                )}
-              </DroppableCell>
-            ))}
+          <div className="flex-1 relative bg-gray-100 rounded-lg p-4">
+            <div className="absolute top-4 right-4 z-10 flex gap-2">
+              <HintButton onClick={handleHint} hintsUsed={hintsUsed} />
+              <button onClick={() => setZoomLevel((prev) => Math.min(prev + 0.1, 2))} className="bg-blue-500 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
+                <ZoomIn size={20} />
+              </button>
+              <button onClick={() => setZoomLevel((prev) => Math.max(prev - 0.1, 0.5))} className="bg-blue-500 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
+                <ZoomOut size={20} />
+              </button>
+            </div>
+            <SortableContext items={gridPieces.map((p) => p.id)} strategy={rectSortingStrategy}>
+              <div
+                className="grid gap-2"
+                style={{
+                  gridTemplateColumns: `repeat(${gridSize}, ${cellSize}px)`,
+                  gridTemplateRows: `repeat(${gridSize}, ${cellSize}px)`,
+                }}
+              >
+                {Array.from({ length: gridSize * gridSize }, (_, i) => {
+                  const { row, col } = getRowCol(i, gridSize);
+                  const piece = pieces.find(
+                    (p) => p.currentPosition?.row === row && p.currentPosition?.col === col
+                  );
+
+                  return (
+                    <DroppableCell
+                      key={`cell-${i}`}
+                      id={i}
+                      isOver={dragOverId === `cell-${i}`}
+                    >
+                      {piece && (
+                        <PuzzlePiece
+                          id={piece.id}
+                          imageUrl={game.puzzle.originalImage.url}
+                          pieceData={piece.imageData}
+                          isInBank={false}
+                          cellSize={cellSize}
+                        />
+                      )}
+                    </DroppableCell>
+                  );
+                })}
+              </div>
+            </SortableContext>
           </div>
 
-          {/* Piece Bank Drawer */}
-          <div className={`bg-gray-50 rounded-lg transition-all duration-300 ease-in-out ${isDrawerOpen ? 'max-h-96' : 'max-h-12'} overflow-hidden`}>
-            <div 
-              className="flex justify-between items-center p-4 cursor-pointer"
+          {/* Piece Bank */}
+          <div className={`w-full md:w-1/3 ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-50'} rounded-lg transition-all duration-300 flex flex-col`}>
+            <div
+              className={`flex justify-between items-center p-4 cursor-pointer ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
               onClick={() => setIsDrawerOpen(!isDrawerOpen)}
             >
               <h3 className="text-lg font-semibold">Available Pieces</h3>
-              {isDrawerOpen ? <ChevronDown /> : <ChevronUp />}
+              {isDrawerOpen ? <ChevronDown size={20} /> : <ChevronUp size={20} />}
             </div>
-            <div className="p-4 grid grid-cols-4 gap-4 overflow-y-auto max-h-screen">
-            {game.puzzle.pieces
-                .filter(p => !p.isCorrectlyPlaced)
-                .map((piece) => (
-                  <div key={piece._id} className="aspect-square relative">
-                    <PuzzlePiece
-                      id={piece._id}
-                      imageUrl={game.puzzle.originalImage.url}
-                      pieceData={piece.imageData}
-                      isInBank={true}
-                    />
+
+            {isDrawerOpen && (
+              <SortableContext items={bankPieces.map((p) => p.id)} strategy={rectSortingStrategy}>
+                <div className="flex-1 overflow-y-auto p-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    {bankPieces.map((piece) => (
+                      <div key={piece.id} className="aspect-square relative">
+                        <PuzzlePiece
+                          id={piece.id}
+                          imageUrl={game.puzzle.originalImage.url}
+                          pieceData={piece.imageData}
+                          isInBank={true}
+                          cellSize={cellSize}
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
-            </div>
+                </div>
+              </SortableContext>
+            )}
           </div>
         </div>
+
+        <DragOverlay>
+          {activeId && (
+            <div className="w-[200px] h-[200px] relative">
+              <PuzzlePiece
+                id={activeId}
+                imageUrl={game.puzzle.originalImage.url}
+                pieceData={pieces.find((p) => p.id === activeId)?.imageData}
+                isInBank={true}
+                cellSize={cellSize}
+              />
+            </div>
+          )}
+        </DragOverlay>
       </DndContext>
     </div>
   );
 };
 
-export default GameRoom;
+export default React.memo(GameRoom);

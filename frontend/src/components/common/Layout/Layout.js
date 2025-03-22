@@ -38,7 +38,7 @@ const Layout = ({ children }) => {
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
       <Navbar user={user} onThemeToggle={handleThemeToggle} />
-      <main className="flex-grow">
+      <main className="pt-12 flex-grow">
         <Outlet>
           {children}
         </Outlet>

@@ -7,7 +7,7 @@ module.exports = {
   mongoUri: process.env.MONGO_URI,
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiration: '24h',
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5000',
+  clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
   nodeEnv: process.env.NODE_ENV || 'development',
   reduxKey: process.env.REDUX_KEY,
   cookieSecret: process.env.COOKIE_SECRET,
