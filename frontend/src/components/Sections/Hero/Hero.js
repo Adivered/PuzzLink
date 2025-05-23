@@ -7,7 +7,7 @@ const HeroSection = ({theme, sectionRef}) => {
   const { user } = useSelector((state) => state.auth);
   const navigate = useNavigate();
   return (
-    <section id="hero" ref={sectionRef} className="min-h-screen flex items-center justify-center relative overflow-hidden" >
+    <section id="hero" ref={sectionRef} className="h-[calc(100vh-7dvh)] sm:h-[calc(100vh-8dvh)] md:h-[calc(100vh-9dvh)] lg:h-[calc(100vh-10dvh)] flex items-center justify-center relative overflow-hidden" >
       <svg id="heroSvg" className="absolute w-full h-full" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <radialGradient id="heroGradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
