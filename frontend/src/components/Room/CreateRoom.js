@@ -1,210 +1,121 @@
-import React, { useState, useRef } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
-import { gsap } from 'gsap';
-import { createRoom } from '../../store/roomSlice';
-import { useNavigate } from 'react-router-dom';
-import useIsomorphicLayoutEffect from '../../hooks/useIsomorphicLayoutEffect';
+import { useState, useRef } from "react";
+import { useSelector, useDispatch } from "react-redux";
+import { createRoom } from "../../store/roomSlice";
+import { useNavigate } from "react-router-dom";
+import GameTypeStation from "./stations/GameTypeStation";
+import RoomConfigStation from "./stations/RoomConfigStation";
+import ImageStation from "./stations/ImageStation";
+import StationIndicator from "./stations/StationIndicator";
 
 const CreateRoom = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const theme = useSelector((state) => state.theme.current);
+  const [currentStation, setCurrentStation] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const stationsRef = useRef(null);
+
   const [roomData, setRoomData] = useState({
-    name: '',
+    name: "",
     invites: [],
     timeLimit: 30,
-    gameMode: 'Puzzle',
+    gameMode: "",
     turnBased: false,
     image: null,
-    imagePrompt: ''
+    imagePrompt: "",
+    imagePreview: null,
   });
-  const [inviteEmail, setInviteEmail] = useState('');
-  const theme = useSelector((state) => state.theme.current);
-  const dispatch = useDispatch();
-  const formRef = useRef(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useIsomorphicLayoutEffect(() => {
-    const ctx = gsap.context(() => {
-      const tl = gsap.timeline();
-      tl.from(formRef.current, {
-        opacity: 0,
-        scale: 0.9,
-        duration: 0.5,
-        ease: 'back.out(1.7)'
-      });
-      tl.to(formRef.current.children, {
-        opacity: 1,
-        duration: 0.5,
-        stagger: 0.1,
-        ease: 'power1.out'
-      }, "-=0.3");
-    }, formRef);
+  const isDarkTheme = theme === "dark";
 
-    return () => ctx.revert();
-  }, []);
+  const handleNext = () => currentStation < 2 && setCurrentStation(currentStation + 1);
+  const handlePrevious = () => currentStation > 0 && setCurrentStation(currentStation - 1);
 
-  const handleChange = (e) => {
-    const { name, value, type, checked, files } = e.target;
-    setRoomData(prevData => ({
-      ...prevData,
-      [name]: type === 'checkbox' ? checked : type === 'file' ? files[0] : value
-    }));
+  const updateRoomData = (data) => {
+    setRoomData((prev) => ({ ...prev, ...data }));
   };
 
-  const handleInvitePlayer = (e) => {
-    e.preventDefault();
-    if (inviteEmail) {
-      setRoomData(prevData => ({
-        ...prevData,
-        invites: [...prevData.invites, inviteEmail]
-      }));
-      setInviteEmail('');
-    }
-  };
-
-  const handleRemoveInvite = (index) => {
-    setRoomData(prevData => ({
-      ...prevData,
-      invites: prevData.invites.filter((_, i) => i !== index)
-    }));
-  };
-
-  const handleCreateRoom = async (e) => {
-    e.preventDefault();
+  const handleCreateRoom = async () => {
     if (isSubmitting) return;
-    
-    try {
-      setIsSubmitting(true);
-      const result = await dispatch(createRoom(roomData)).unwrap();
-      console.log('Room created:', result);
-      navigate(`/rooms/${result._id}`);
+    setIsSubmitting(true);
 
+    try {
+      const result = await dispatch(createRoom(roomData)).unwrap();
+      navigate(`/rooms/${result._id}`);
     } catch (error) {
-      console.error('Failed to create room:', error);
-    } finally {
+      console.error("Failed to create room:", error);
       setIsSubmitting(false);
     }
   };
 
+  const canProceedToNext = () => {
+    if (currentStation === 0) return !!roomData.gameMode;
+    if (currentStation === 1) return !!roomData.name && roomData.timeLimit >= 5;
+    return true;
+  };
+
   return (
-    <div ref={formRef} className={`p-6 rounded-lg shadow-lg ${theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'}`}>
-      <h2 className="text-2xl font-bold mb-4">Create Game Room</h2>
-      <form onSubmit={handleCreateRoom}>
-        <div className="mb-4">
-          <label className="block mb-2">Room Name</label>
-          <input
-            type="text"
-            name="name"
-            value={roomData.name}
-            onChange={handleChange}
-            className={`w-full p-2 border rounded ${theme === 'dark' ? 'text-gray-800' : 'text-gray-800'}`}
-            required
-          />
-        </div>
-        <div className="mb-4">
-          <label className="block mb-2">Invite Players</label>
-          <div className="flex">
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              className={`flex-grow p-2 border rounded-l ${theme === 'dark' ? 'text-gray-800' : 'text-gray-800'}`}
-              placeholder="Enter player's email"
-            />
-            <button
-              type="button"
-              onClick={handleInvitePlayer}
-              className={`bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r ${theme === 'dark' ? 'text-gray-800' : 'text-gray-800'}`}
-            >
-              Invite
-            </button>
-          </div>
-        </div>
-        {roomData.invites.length > 0 && (
-          <div className="mb-4">
-            <h3 className="font-bold mb-2">Invited Players:</h3>
-            <ul>
-              {roomData.invites.map((invite, index) => (
-                <li key={index} className="flex justify-between items-center mb-2">
-                  <span>{invite}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveInvite(index)}
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <div className="mb-4">
-          <label className="block mb-2">Time Limit (minutes)</label>
-          <input
-            type="number"
-            name="timeLimit"
-            value={roomData.timeLimit}
-            onChange={handleChange}
-            className={`w-full p-2 border rounded ${theme === 'dark' ? 'text-gray-800' : 'text-gray-800'}`}
-            min="5"
-            max="180"
-            required
-          />
-        </div>
-        <div className="mb-4">
-          <label className="block mb-2">Game Mode</label>
-          <select
-            name="gameMode"
-            value={roomData.gameMode}
-            onChange={handleChange}
-            className={`w-full p-2 border rounded ${theme === 'dark' ? 'text-gray-800' : 'text-gray-800'}`}
+    <div
+      className={`max-w-4xl mx-auto p-4 sm:p-6 rounded-xl shadow-lg transition-colors duration-300 ${
+        isDarkTheme ? "bg-gray-800 text-white" : "bg-white text-gray-800"
+      }`}
+    >
+      <StationIndicator currentStation={currentStation} isDarkTheme={isDarkTheme} />
+
+      <div ref={stationsRef} className="relative min-h-[500px]">
+        <GameTypeStation
+          roomData={roomData}
+          updateRoomData={updateRoomData}
+          isActive={currentStation === 0}
+          isDarkTheme={isDarkTheme}
+        />
+        <RoomConfigStation
+          roomData={roomData}
+          updateRoomData={updateRoomData}
+          isActive={currentStation === 1}
+          isDarkTheme={isDarkTheme}
+        />
+        <ImageStation
+          roomData={roomData}
+          updateRoomData={updateRoomData}
+          isActive={currentStation === 2}
+          isDarkTheme={isDarkTheme}
+        />
+      </div>
+
+      <div className={`flex ${currentStation > 0 ? "justify-between" : "justify-end"} mt-8`}>
+        {currentStation > 0 && (
+          <button
+            onClick={handlePrevious}
+            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+              isDarkTheme ? "bg-gray-700 hover:bg-gray-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-800"
+            }`}
           >
-            <option value="Puzzle">Puzzle</option>
-            <option value="DrawablePuzzle">Drawable Puzzle</option>
-            <option value="Drawable">Drawable</option>
-          </select>
-        </div>
-        <div className="mb-4">
-          <label className="flex items-center">
-            <input
-              type="checkbox"
-              name="turnBased"
-              checked={roomData.turnBased}
-              onChange={handleChange}
-              className="mr-2"
-            />
-            Turn-based game
-          </label>
-        </div>
-        <div className="mb-4">
-          <label className="block mb-2">Upload Image</label>
-          <input
-            type="file"
-            name="image"
-            onChange={handleChange}
-            accept="image/*"
-            className={`w-full p-2 border rounded ${theme === 'dark' ? 'text-gray-800' : 'text-gray-800'}`}
-          />
-        </div>
-        <div className="mb-4">
-          <label className="block mb-2">Image Generation Prompt</label>
-          <input
-            type="text"
-            name="imagePrompt"
-            value={roomData.imagePrompt}
-            onChange={handleChange}
-            className={`w-full p-2 border rounded ${theme === 'dark' ? 'text-gray-800' : 'text-gray-800'}`}
-            placeholder="Enter prompt for image generation"
-          />
-        </div>
-        <button 
-          type="submit" 
-          className={`bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? 'Creating...' : 'Create Room'}
-        </button>
-      </form>
+            Previous
+          </button>
+        )}
+        {currentStation < 2 ? (
+          <button
+            onClick={handleNext}
+            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+              !canProceedToNext() ? "opacity-50 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600 text-white"
+            }`}
+            disabled={!canProceedToNext()}
+          >
+            Next
+          </button>
+        ) : (
+          <button
+            onClick={handleCreateRoom}
+            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+              isSubmitting ? "opacity-50 cursor-not-allowed" : "bg-green-500 hover:bg-green-600 text-white"
+            }`}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "Creating..." : "Create Room"}
+          </button>
+        )}
+      </div>
     </div>
   );
 };

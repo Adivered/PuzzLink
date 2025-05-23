@@ -7,13 +7,15 @@ import popupReducer from './popupSlice';
 import roomReducer from './roomSlice';
 import authReducer from './authSlice';
 import gameReducer from './gameSlice';
+import toastReducer from './toastSlice';
 
 const rootReducer = combineReducers({
   theme: themeReducer,
   popup: popupReducer,
   auth: authReducer,
   room: roomReducer,
-  game: gameReducer
+  game: gameReducer,
+  toast: toastReducer,
 });
 
 const persistConfig = {

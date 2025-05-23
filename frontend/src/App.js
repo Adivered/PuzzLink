@@ -6,7 +6,7 @@ import Login from './pages/auth/Login/Login';
 import Register from './pages/auth/Register/Register';
 import NotFound from './pages/NotFound/NotFound';
 import Profile from './pages/Profile/Profile';
-
+import ToastContainer from './components/common/ToastComponent';
 import ProtectedRoute from './components/common/ProtectedRoute/ProtectedRoute';
 import Layout from './components/common/Layout/Layout';
 import TransitionLayout from './components/common/Layout/TransitionLayout';
@@ -53,7 +53,7 @@ const App = () => {
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
-
+        <ToastContainer />
       </TransitionLayout>
     </>
   );
