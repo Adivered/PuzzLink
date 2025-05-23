@@ -9,6 +9,8 @@ import PuzzlePiece from '../../components/game/PuzzlePiece';
 import { ChevronDown, ChevronUp, ZoomIn, ZoomOut, HelpCircle } from 'lucide-react';
 import Timer from '../../components/game/Timer';
 import HintButton from '../../components/game/HintButton';
+import useRoomChat from '../../hooks/useRoomChat';
+
 const getRowCol = (position, gridSize) => ({
   row: Math.floor(position / gridSize),
   col: position % gridSize,
@@ -27,6 +29,9 @@ const GameRoom = () => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [timer, setTimer] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
+
+  // Initialize room chat for the game
+  useRoomChat();
 
   const gridSize = 4; // Adjustable based on difficulty
   const cellSize = useMemo(() => 100 / zoomLevel, [zoomLevel]);

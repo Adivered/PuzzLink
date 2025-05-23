@@ -8,6 +8,7 @@ import roomReducer from './roomSlice';
 import authReducer from './authSlice';
 import gameReducer from './gameSlice';
 import toastReducer from './toastSlice';
+import chatReducer from './chatSlice';
 
 const rootReducer = combineReducers({
   theme: themeReducer,
@@ -16,6 +17,7 @@ const rootReducer = combineReducers({
   room: roomReducer,
   game: gameReducer,
   toast: toastReducer,
+  chat: chatReducer,
 });
 
 const persistConfig = {

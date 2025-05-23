@@ -12,6 +12,7 @@ import Layout from './components/common/Layout/Layout';
 import TransitionLayout from './components/common/Layout/TransitionLayout';
 import RoomLobby from './components/Room/RoomLobby';
 import GameRoom from './pages/Game/GameRoom';
+import FloatingChat from './components/Chat/FloatingChat';
 
 
 const App = () => {
@@ -54,6 +55,7 @@ const App = () => {
           </Route>
         </Routes>
         <ToastContainer />
+        <FloatingChat />
       </TransitionLayout>
     </>
   );

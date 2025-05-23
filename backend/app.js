@@ -9,9 +9,28 @@ const config = require('./config/default');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const bodyParser = require('body-parser');
+const http = require('http');
+const socketIo = require('socket.io');
+const initializeSocket = require('./sockets');
 require('./config/passport');
 
 const app = express();
+const server = http.createServer(app);
+
+// Socket.io setup with CORS
+const io = socketIo(server, {
+  cors: {
+    origin: config.clientUrl,
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
+// Initialize socket handlers
+initializeSocket(io);
+
+// Store io instance globally for use in other modules
+app.set('io', io);
 
 // Middlewares
 app.use(bodyParser.json());
@@ -53,7 +72,8 @@ const gameRoutes = require('./routes/game')
 const userRoutes = require('./routes/user');
 const roomRoutes = require('./routes/room');
 const profileRoutes = require('./routes/profile');
-const imageRoutes = require('./routes/image');  
+const imageRoutes = require('./routes/image');
+const chatRoutes = require('./routes/chat');
 
 app.use(authRoutes);
 app.use(gameRoutes);
@@ -61,6 +81,7 @@ app.use(userRoutes);
 app.use(roomRoutes);
 app.use(profileRoutes);
 app.use(imageRoutes);
+app.use(chatRoutes);
 
 // Error handler
 app.use((err, req, res, next) => {
@@ -72,10 +93,10 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = config.port;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log('Socket.io initialized with modular handlers');
 });
-
 
 // STATIC FILES
 app.use(express.static(path.join(__dirname, '../frontend/build')));
@@ -85,4 +106,4 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/build/index.html'));
 });
 
-module.export = app;
+module.exports = app;

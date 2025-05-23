@@ -8,6 +8,7 @@ import ImageSelector from "./ImageSelector";
 import CountdownTimer from "./CountdownTimer";
 import { useParams, useNavigate } from "react-router-dom";
 import useIsomorphicLayoutEffect from "../../hooks/useIsomorphicLayoutEffect";
+import useRoomChat from "../../hooks/useRoomChat";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 
 const RoomLobby = () => {
@@ -21,6 +22,9 @@ const RoomLobby = () => {
   const navigate = useNavigate();
   const lobbyRef = useRef(null);
   const isDarkTheme = theme === "dark";
+
+  // Initialize room chat
+  useRoomChat();
 
   useIsomorphicLayoutEffect(() => {
     if (roomId) {
