@@ -1,16 +1,26 @@
 const Game = require('../../models/Game');
 const Puzzle = require('../../models/Puzzle');
+const Whiteboard = require('../../models/Whiteboard');
 
 exports.getGameState = async (req, res) => {
   try {
     const { gameId } = req.params;
     const game = await Game.findById(gameId)
       .populate({
+        path: 'room',
+        select: 'name creator players gameMode',
+        populate: {
+          path: 'players',
+          select: 'name picture'
+        }
+      })
+      .populate({
         path: 'puzzle',
         populate: {
           path: 'pieces'
         }
-      });
+      })
+      .populate('whiteboard');
 
     if (!game) {
       return res.status(404).json({ message: 'Game not found' });

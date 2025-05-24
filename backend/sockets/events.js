@@ -70,6 +70,20 @@ const SOCKET_EVENTS = {
   JOIN_AS_SPECTATOR: 'join_as_spectator',
   REQUEST_GAME_STATE: 'request_game_state',
   GAME_STATE_SYNC: 'game_state_sync',
+
+  // Whiteboard events
+  WHITEBOARD_DRAW_START: 'whiteboard_draw_start',
+  WHITEBOARD_DRAW_MOVE: 'whiteboard_draw_move',
+  WHITEBOARD_DRAW_END: 'whiteboard_draw_end',
+  WHITEBOARD_STROKE_ADDED: 'whiteboard_stroke_added',
+  WHITEBOARD_CLEAR: 'whiteboard_clear',
+  WHITEBOARD_CLEARED: 'whiteboard_cleared',
+  WHITEBOARD_UNDO: 'whiteboard_undo',
+  WHITEBOARD_REDO: 'whiteboard_redo',
+  WHITEBOARD_STATE_SYNC: 'whiteboard_state_sync',
+  WHITEBOARD_TOOL_CHANGE: 'whiteboard_tool_change',
+  WHITEBOARD_CURSOR_POSITION: 'whiteboard_cursor_position',
+  WHITEBOARD_USER_CURSOR: 'whiteboard_user_cursor',
 };
 
 // Room name generators
@@ -79,6 +93,7 @@ const ROOM_NAMES = {
   ROOM: (roomId) => `room_${roomId}`,
   GAME: (gameId) => `game_${gameId}`,
   GAME_SPECTATORS: (gameId) => `game_${gameId}_spectators`,
+  WHITEBOARD: (gameId) => `whiteboard_${gameId}`,
   HOME: () => 'home', // Special home room identifier
 };
 

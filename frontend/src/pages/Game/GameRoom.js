@@ -6,22 +6,21 @@ import { fetchGame } from '../../store/gameSlice';
 import { useParams } from 'react-router-dom';
 import DroppableCell from '../../components/game/DroppableCell';
 import PuzzlePiece from '../../components/game/PuzzlePiece';
+import Whiteboard from '../../components/Whiteboard/Whiteboard';
 import { ChevronDown, ChevronUp, ZoomIn, ZoomOut, HelpCircle } from 'lucide-react';
 import Timer from '../../components/game/Timer';
 import HintButton from '../../components/game/HintButton';
-import useRoomChat from '../../hooks/useRoomChat';
 
 const getRowCol = (position, gridSize) => ({
   row: Math.floor(position / gridSize),
   col: position % gridSize,
 });
 
-
 const GameRoom = () => {
   const { gameId } = useParams();
   const dispatch = useDispatch();
   const theme = useSelector((state) => state.theme.current);
-  const { data: game } = useSelector((state) => state.game);
+  const { data: game, loading, error } = useSelector((state) => state.game);
   const [activeId, setActiveId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [pieces, setPieces] = useState([]);
@@ -30,14 +29,13 @@ const GameRoom = () => {
   const [timer, setTimer] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
 
-  // Initialize room chat for the game
-  useRoomChat();
-
   const gridSize = 4; // Adjustable based on difficulty
   const cellSize = useMemo(() => 100 / zoomLevel, [zoomLevel]);
 
   useEffect(() => {
-    dispatch(fetchGame(gameId));
+    if (gameId) {
+      dispatch(fetchGame(gameId));
+    }
   }, [dispatch, gameId]);
 
   useEffect(() => {
@@ -97,8 +95,63 @@ const GameRoom = () => {
   const gridPieces = useMemo(() => pieces.filter((p) => p.currentPosition !== null), [pieces]);
   const bankPieces = useMemo(() => pieces.filter((p) => p.currentPosition === null), [pieces]);
 
-  if (!game || !game.puzzle) {
-    return <div className="p-6 rounded-lg bg-yellow-50 text-yellow-600">Loading...</div>;
+  // Loading state
+  if (loading) {
+    return (
+      <div className={`h-screen w-screen flex items-center justify-center ${
+        theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'
+      }`}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-xl">Loading game...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className={`h-screen w-screen flex items-center justify-center ${
+        theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'
+      }`}>
+        <div className="text-center">
+          <p className="text-xl text-red-500 mb-4">Error loading game</p>
+          <p className="text-gray-500">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // No game data
+  if (!game) {
+    return (
+      <div className={`h-screen w-screen flex items-center justify-center ${
+        theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'
+      }`}>
+        <p className="text-xl">Game not found</p>
+      </div>
+    );
+  }
+
+  // Render whiteboard for drawable games
+  if (game.whiteboard) {
+    return (
+      <div className={`h-screen w-screen ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-50'}`}>
+        <Whiteboard gameId={gameId} />
+      </div>
+    );
+  }
+
+  // Render puzzle game (existing logic)
+  if (!game.puzzle) {
+    return (
+      <div className={`h-screen w-screen flex items-center justify-center ${
+        theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'
+      }`}>
+        <p className="text-xl">Invalid game type</p>
+      </div>
+    );
   }
 
   return (

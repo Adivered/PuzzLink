@@ -83,9 +83,12 @@ const RoomConfigStation = ({ roomData, updateRoomData, isActive, isDarkTheme }) 
               type="checkbox"
               checked={roomData.turnBased}
               onChange={(e) => updateRoomData({ turnBased: e.target.checked })}
-              className="mr-2 w-5 h-5"
+              disabled={roomData.gameMode === 'Drawable'}
+              className={`mr-2 w-5 h-5 ${roomData.gameMode === 'Drawable' ? 'opacity-50 cursor-not-allowed' : ''}`}
             />
-            <span className="font-medium">Turn-based game</span>
+            <span className={`font-medium ${roomData.gameMode === 'Drawable' ? 'opacity-50' : ''}`}>
+              Turn-based game {roomData.gameMode === 'Drawable' ? '(Not available for whiteboard)' : ''}
+            </span>
           </label>
         </div>
       </div>

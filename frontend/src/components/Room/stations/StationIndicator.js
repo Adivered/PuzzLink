@@ -1,11 +1,16 @@
 import { PuzzlePieceIcon, CogIcon, PhotoIcon } from "@heroicons/react/24/outline";
 
-const StationIndicator = ({ currentStation, isDarkTheme }) => {
-  const stations = [
+const StationIndicator = ({ currentStation, isDarkTheme, roomData }) => {
+  const allStations = [
     { name: "Game Type", icon: <PuzzlePieceIcon className="w-6 h-6" /> },
     { name: "Room Setup", icon: <CogIcon className="w-6 h-6" /> },
     { name: "Image", icon: <PhotoIcon className="w-6 h-6" /> },
   ];
+  
+  // Skip image station for whiteboard games
+  const stations = roomData?.gameMode === 'Drawable' 
+    ? allStations.slice(0, 2) 
+    : allStations;
 
   return (
     <div className="mb-8">
@@ -37,7 +42,7 @@ const StationIndicator = ({ currentStation, isDarkTheme }) => {
       <div className={`w-full h-2 rounded-full ${isDarkTheme ? "bg-gray-700" : "bg-gray-200"}`}>
         <div
           className={`h-full rounded-full ${isDarkTheme ? "bg-blue-600" : "bg-blue-500"}`}
-          style={{ width: `${currentStation * 50}%` }}
+          style={{ width: `${(currentStation / (stations.length - 1)) * 100}%` }}
         />
       </div>
     </div>
