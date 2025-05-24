@@ -3,6 +3,7 @@ const Game = require('../../models/Game');
 const User = require('../../models/User');
 const PieceSchema = require('../../models/PieceSchema');
 const Puzzle = require('../../models/Puzzle');
+const Whiteboard = require('../../models/Whiteboard');
 
 exports.createRoom = async (req, res) => {
   try {
@@ -11,9 +12,12 @@ exports.createRoom = async (req, res) => {
     console.log("Files:", req.files || req.file);
     const { roomName, players,gameMode, timeLimit, turnBased } = req.body;
     let imagePath = null;
-    if (req.file) {
+    
+    // Only process image for non-whiteboard games
+    if (req.file && gameMode.toLowerCase() !== 'drawable') {
       imagePath = encodeURI(`/uploads/${req.file.filename}`); // Encode the image path
     }
+    
     //const roomOptions = new RoomOptions({ timeLimit });
     let room = new Room({
       name: roomName,
@@ -21,7 +25,7 @@ exports.createRoom = async (req, res) => {
       players: players ? [req.user._id, ...players] : [req.user._id],
       timeLimit,
       gameMode: gameMode.toLowerCase(),
-      turnBased,
+      turnBased: gameMode.toLowerCase() === 'drawable' ? false : turnBased, // Force turnBased to false for whiteboard
       image: imagePath,
       status: 'waiting',
     });
@@ -81,48 +85,85 @@ exports.startGame = async (req, res) => {
     console.log("Room found: ", room)
 
     try{
-      let difficulty = room.difficulty === 'medium' ? { rows: 4, cols: 4 } : difficulty === 'easy' ? { rows: 3, cols: 3 } : { rows: 5, cols: 5 };
-      const imageWidth = 1000; 
-      const imageHeight = 1000;
-      const piecesData = generatePuzzlePieces(imageWidth, imageHeight, difficulty.rows, difficulty.cols);
-      console.log("Pieces: ", piecesData)
+      let game;
+      
+      if (room.gameMode.toLowerCase() === 'drawable') {
+        // Create whiteboard game
+        const whiteboard = new Whiteboard({
+          game: null, // Will be set after game creation
+          background: {
+            color: '#ffffff'
+          },
+          dimensions: {
+            width: 1920,
+            height: 1080
+          }
+        });
+        
+        game = new Game({
+          room: room._id,
+          whiteboard: null // Will be set after whiteboard creation
+        });
+        
+        await game.save();
+        
+        // Update whiteboard with game reference
+        whiteboard.game = game._id;
+        await whiteboard.save();
+        
+        // Update game with whiteboard reference
+        game.whiteboard = whiteboard._id;
+        await game.save();
+        
+        console.log("Whiteboard game created: ", game);
+      } else {
+        // Create puzzle game (existing logic)
+        let difficulty = room.difficulty === 'medium' ? { rows: 4, cols: 4 } : difficulty === 'easy' ? { rows: 3, cols: 3 } : { rows: 5, cols: 5 };
+        const imageWidth = 1000; 
+        const imageHeight = 1000;
+        const piecesData = generatePuzzlePieces(imageWidth, imageHeight, difficulty.rows, difficulty.cols);
+        console.log("Pieces: ", piecesData)
 
-      const pieceDocuments = await Promise.all(
-        piecesData.map(pieceData => {
-          const piece = new PieceSchema({
-            position: pieceData.position,
-            currentPosition: pieceData.currentPosition,
-            imageData: pieceData.imageData,
-            connections: pieceData.connections,
-            isCorrectlyPlaced: pieceData.isCorrectlyPlaced
-          });
-          return piece.save();
-        })
-      );
+        const pieceDocuments = await Promise.all(
+          piecesData.map(pieceData => {
+            const piece = new PieceSchema({
+              position: pieceData.position,
+              currentPosition: pieceData.currentPosition,
+              imageData: pieceData.imageData,
+              connections: pieceData.connections,
+              isCorrectlyPlaced: pieceData.isCorrectlyPlaced
+            });
+            return piece.save();
+          })
+        );
 
-
-      const puzzle = await Puzzle.create({
-        originalImage: {
-          url: room.image,
-          width: imageWidth,
-          height: imageHeight
-        },
-        pieces: pieceDocuments.map(doc => doc._id),
-      });
-      const game = new Game({
-        room: room._id,
-        puzzle: room.gameMode === 'puzzle' ? puzzle : undefined,
-      });
-      console.log("Game created: ", game);
-      await game.save();
+        const puzzle = await Puzzle.create({
+          originalImage: {
+            url: room.image,
+            width: imageWidth,
+            height: imageHeight
+          },
+          pieces: pieceDocuments.map(doc => doc._id),
+        });
+        
+        game = new Game({
+          room: room._id,
+          puzzle: room.gameMode === 'puzzle' ? puzzle._id : undefined,
+        });
+        
+        await game.save();
+        console.log("Puzzle game created: ", game);
+      }
+      
       room.status = 'inProgress';
-    room.currentGame = game._id;
-    await room.save();
+      room.currentGame = game._id;
+      await room.save();
 
-    res.json({ message: 'Game started', gameId: game._id });
+      res.json({ message: 'Game started', gameId: game._id });
     }
     catch(e){
       console.log("Error: ", e)
+      res.status(500).json({ message: 'Server error', error: e.message });
     }
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });

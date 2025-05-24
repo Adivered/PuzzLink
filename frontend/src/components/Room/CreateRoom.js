@@ -28,8 +28,26 @@ const CreateRoom = () => {
 
   const isDarkTheme = theme === "dark";
 
-  const handleNext = () => currentStation < 2 && setCurrentStation(currentStation + 1);
-  const handlePrevious = () => currentStation > 0 && setCurrentStation(currentStation - 1);
+  const handleNext = () => {
+    if (currentStation < 2) {
+      // Skip image station for whiteboard games
+      if (currentStation === 1 && roomData.gameMode === 'Drawable') {
+        return; // Stay on station 1, will create room directly
+      }
+      setCurrentStation(currentStation + 1);
+    }
+  };
+  
+  const handlePrevious = () => {
+    if (currentStation > 0) {
+      // Skip image station when going back from whiteboard games
+      if (currentStation === 2 && roomData.gameMode === 'Drawable') {
+        setCurrentStation(0); // Go back to game type selection
+      } else {
+        setCurrentStation(currentStation - 1);
+      }
+    }
+  };
 
   const updateRoomData = (data) => {
     setRoomData((prev) => ({ ...prev, ...data }));
@@ -60,7 +78,7 @@ const CreateRoom = () => {
         isDarkTheme ? "bg-gray-800 text-white" : "bg-white text-gray-800"
       }`}
     >
-      <StationIndicator currentStation={currentStation} isDarkTheme={isDarkTheme} />
+      <StationIndicator currentStation={currentStation} isDarkTheme={isDarkTheme} roomData={roomData} />
 
       <div ref={stationsRef} className="relative min-h-[500px]">
         <GameTypeStation
@@ -94,7 +112,7 @@ const CreateRoom = () => {
             Previous
           </button>
         )}
-        {currentStation < 2 ? (
+        {currentStation < 2 && !(currentStation === 1 && roomData.gameMode === 'Drawable') ? (
           <button
             onClick={handleNext}
             className={`px-6 py-2 rounded-lg font-medium transition-colors ${

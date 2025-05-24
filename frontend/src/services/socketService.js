@@ -3,6 +3,7 @@ import ChatSocketHandler from './socket/chatSocketHandler';
 import UserSocketHandler from './socket/userSocketHandler';
 import RoomSocketHandler from './socket/roomSocketHandler';
 import GameSocketHandler from './socket/gameSocketHandler';
+import WhiteboardSocketHandler from './socket/whiteboardSocketHandler';
 import { SOCKET_EVENTS } from '../constants/socketEvents';
 import store from '../store';
 import { setActiveRoom, setRoomDetails } from '../store/chatSlice';
@@ -22,13 +23,23 @@ class SocketService {
     this.handlers = {};
     this.connectionPromise = null;
     this.reconnectInterval = null;
-    this.maxReconnectAttempts = 5;
+    this.maxReconnectAttempts = 10;
     this._isConnecting = false;
     this.backoffDelay = 1000; // Start with 1 second
     this.maxBackoffDelay = 30000; // Max 30 seconds
     this.connectionAttempts = 0;
     this.lastConnectionAttempt = 0;
     this.minRetryInterval = 5000; // Minimum 5 seconds between attempts
+    this.reconnectAttempts = 0;
+    this.isDestroyed = false;
+    this.currentWhiteboardId = null; // Track current whiteboard session
+    
+    // Throttled functions
+    this.throttledCursorUpdate = this.throttle((gameId, x, y, visible) => {
+      if (this.socket && this.isConnected) {
+        this.socket.emit('whiteboard_cursor', { gameId, x, y, visible });
+      }
+    }, 50); // 20 updates per second
   }
 
   get isConnecting() {
@@ -151,7 +162,8 @@ class SocketService {
       chat: new ChatSocketHandler(this.socket),
       user: new UserSocketHandler(this.socket),
       room: new RoomSocketHandler(this.socket),
-      game: new GameSocketHandler(this.socket)
+      game: new GameSocketHandler(this.socket),
+      whiteboard: new WhiteboardSocketHandler(this.socket)
     };
     
     console.log('🔧 Socket handlers initialized');
@@ -194,6 +206,9 @@ class SocketService {
     // Reset connection tracking
     this.connectionAttempts = 0;
     this.backoffDelay = 1000;
+    
+    // Reset whiteboard tracking
+    this.currentWhiteboardId = null;
 
     if (this.socket) {
       console.log('🔌 Disconnecting from socket server');
@@ -340,6 +355,87 @@ class SocketService {
     this.handlers.game?.leaveGame(gameId);
   }
 
+  // Whiteboard methods
+  joinWhiteboard(gameId) {
+    if (!this.isConnected) {
+      console.warn('⚠️ Cannot join whiteboard: socket not connected');
+      return;
+    }
+    
+    // Prevent duplicate joins
+    if (this.currentWhiteboardId === gameId) {
+      console.log('🎨 Already in whiteboard session:', gameId);
+      return;
+    }
+    
+    // Leave current whiteboard if in one
+    if (this.currentWhiteboardId) {
+      console.log('🎨 Leaving previous whiteboard:', this.currentWhiteboardId);
+      this.socket.emit('leave_game', this.currentWhiteboardId);
+    }
+    
+    console.log('🎨 Joining whiteboard:', gameId);
+    this.currentWhiteboardId = gameId;
+    this.socket.emit('join_game', gameId);
+  }
+
+  leaveWhiteboard(gameId) {
+    if (!this.isConnected) {
+      console.warn('⚠️ Cannot leave whiteboard: socket not connected');
+      return;
+    }
+    
+    // Only leave if we're actually in this whiteboard
+    if (this.currentWhiteboardId !== gameId) {
+      console.log('🎨 Not in whiteboard session:', gameId);
+      return;
+    }
+    
+    console.log('🎨 Leaving whiteboard:', gameId);
+    this.currentWhiteboardId = null;
+    this.socket.emit('leave_game', gameId);
+  }
+
+  sendWhiteboardDrawStart(gameId, strokeData) {
+    if (!this.isConnected) return;
+    this.socket.emit('whiteboard_draw_start', { gameId, strokeData });
+  }
+
+  sendWhiteboardDrawMove(gameId, strokeId, point) {
+    if (!this.isConnected) return;
+    this.socket.emit('whiteboard_draw_move', { gameId, strokeId, point });
+  }
+
+  sendWhiteboardDrawEnd(gameId, strokeData) {
+    if (!this.isConnected) return;
+    this.socket.emit('whiteboard_draw_end', { gameId, strokeData });
+  }
+
+  sendWhiteboardCursorPosition(gameId, x, y, visible = true) {
+    if (!this.isConnected) return;
+    this.throttledCursorUpdate(gameId, x, y, visible);
+  }
+
+  sendWhiteboardToolChange(gameId, tool, color, size, opacity) {
+    if (!this.isConnected) return;
+    this.socket.emit('whiteboard_tool_change', { gameId, tool, color, size, opacity });
+  }
+
+  sendWhiteboardClear(gameId, clearAll = true) {
+    if (!this.isConnected) return;
+    this.socket.emit('whiteboard_clear', { gameId, clearAll });
+  }
+
+  sendWhiteboardUndo(gameId, strokeId) {
+    if (!this.isConnected) return;
+    this.socket.emit('whiteboard_undo', { gameId, strokeId });
+  }
+
+  requestWhiteboardState(gameId) {
+    if (!this.isConnected) return;
+    this.socket.emit('request_game_state', { gameId });
+  }
+
   // Cleanup method
   destroyHandlers() {
     Object.values(this.handlers).forEach(handler => {
@@ -348,6 +444,26 @@ class SocketService {
       }
     });
     this.handlers = {};
+  }
+
+  // Throttle utility function
+  throttle(func, delay) {
+    let timeoutId;
+    let lastExecTime = 0;
+    return function (...args) {
+      const currentTime = Date.now();
+      
+      if (currentTime - lastExecTime > delay) {
+        func.apply(this, args);
+        lastExecTime = currentTime;
+      } else {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          func.apply(this, args);
+          lastExecTime = Date.now();
+        }, delay - (currentTime - lastExecTime));
+      }
+    };
   }
 }
 

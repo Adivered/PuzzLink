@@ -10,6 +10,10 @@ const GameSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Puzzle',
   },
+  whiteboard: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Whiteboard',
+  },
   moves: {
     type: Number,
     default: 0

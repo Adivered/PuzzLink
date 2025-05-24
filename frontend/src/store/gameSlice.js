@@ -33,12 +33,14 @@ const gameSlice = createSlice({
   initialState: {
     data: null,
     status: 'idle',
+    loading: false,
     error: null,
   },
   reducers: {
     resetGame: (state) => {
       state.data = null;
       state.status = 'idle';
+      state.loading = false;
       state.error = null;
     },
   },
@@ -47,13 +49,18 @@ const gameSlice = createSlice({
       // Fetch game cases
       .addCase(fetchGame.pending, (state) => {
         state.status = 'loading';
+        state.loading = true;
+        state.error = null;
       })
       .addCase(fetchGame.fulfilled, (state, action) => {
         state.status = 'succeeded';
+        state.loading = false;
         state.data = action.payload;
+        state.error = null;
       })
       .addCase(fetchGame.rejected, (state, action) => {
         state.status = 'failed';
+        state.loading = false;
         state.error = action.error.message;
       })
       // Update game state cases
