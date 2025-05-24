@@ -9,6 +9,7 @@ import authReducer from './authSlice';
 import gameReducer from './gameSlice';
 import toastReducer from './toastSlice';
 import chatReducer from './chatSlice';
+import socketReducer from './socketSlice';
 
 const rootReducer = combineReducers({
   theme: themeReducer,
@@ -18,6 +19,7 @@ const rootReducer = combineReducers({
   game: gameReducer,
   toast: toastReducer,
   chat: chatReducer,
+  socket: socketReducer,
 });
 
 const persistConfig = {

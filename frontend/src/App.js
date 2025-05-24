@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -13,9 +13,38 @@ import TransitionLayout from './components/common/Layout/TransitionLayout';
 import RoomLobby from './components/Room/RoomLobby';
 import GameRoom from './pages/Game/GameRoom';
 import FloatingChat from './components/Chat/FloatingChat';
-
+import socketService from './services/socketService';
 
 const App = () => {
+  // Global socket cleanup only on actual page unload
+  useEffect(() => {
+    console.log('App component mounted - setting up cleanup handlers');
+    
+    const handleBeforeUnload = () => {
+      console.log('Page unloading - disconnecting socket');
+      socketService.disconnect();
+    };
+
+    // Only add the beforeunload listener, don't disconnect on component unmount
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // In development, add additional logging
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Development mode - App component initialized');
+      
+      // Log when cleanup function is called (but don't disconnect)
+      return () => {
+        console.log('App component cleanup called (StrictMode or unmount) - NOT disconnecting socket');
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+      };
+    }
+
+    // Production cleanup
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
   return (
     <>
       <TransitionLayout>

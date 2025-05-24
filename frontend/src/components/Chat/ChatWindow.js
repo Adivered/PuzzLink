@@ -15,34 +15,60 @@ const ChatWindow = () => {
     activeRoom, 
     messages, 
     loading,
-    conversations 
+    conversations,
+    roomDetails,
+    onlineUsers
   } = useSelector((state) => state.chat);
 
   const [messageText, setMessageText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const typingTimeoutRef = useRef(null);
   const messageInputRef = useRef(null);
+  const roomUserRequestTimeoutRef = useRef(null);
 
   const isDarkTheme = theme === 'dark';
   const currentChatId = activeConversation || activeRoom;
   const currentMessages = currentChatId ? messages[currentChatId] || [] : [];
-
+  
   // Get current conversation/room info
   const getCurrentChatInfo = () => {
     if (activeConversation) {
       const conversation = conversations.find(c => c._id === activeConversation);
       if (conversation) {
-        const otherUser = conversation.participants.find(p => p._id !== user._id);
+        const otherUser = conversation.participants.find(p => p._id !== user.id);
         return {
           name: conversation.isGroup ? conversation.groupName : otherUser?.name,
           avatar: conversation.isGroup ? conversation.groupAvatar : otherUser?.picture,
-          isOnline: otherUser ? true : false, // You can implement online status logic here
+          isOnline: otherUser ? true : false,
           type: 'conversation'
         };
       }
     }
     
     if (activeRoom) {
+      const roomData = roomDetails[activeRoom];
+      
+      // If we have room details, use them
+      if (roomData) {
+        return {
+          name: roomData.name,
+          avatar: roomData.image || null,
+          isOnline: true,
+          type: 'room'
+        };
+      }
+      
+      // Fallback to checking if it's the Home room
+      if (activeRoom === user?.homeRoomId) {
+        return {
+          name: 'Home',
+          avatar: null,
+          isOnline: true,
+          type: 'room'
+        };
+      }
+      
+      // Default fallback
       return {
         name: 'Room Chat',
         avatar: null,
@@ -56,16 +82,70 @@ const ChatWindow = () => {
 
   const chatInfo = getCurrentChatInfo();
 
+  // Get online user count for current chat
+  const getOnlineUserCount = () => {
+    if (activeConversation) {
+      const conversation = conversations.find(c => c._id === activeConversation);
+      if (conversation) {
+        // For conversations, count online participants
+        const onlineParticipants = conversation.participants.filter(p => 
+          onlineUsers.includes(p._id)
+        );
+        return onlineParticipants.length;
+      }
+    }
+    
+    if (activeRoom) {
+      // For rooms, use the actual room data from socket
+      const roomData = roomDetails[activeRoom];
+      if (roomData?.onlineCount !== undefined) {
+        return roomData.onlineCount;
+      }
+      // If we don't have room data yet, return 0 and let the socket request handle it
+      return 0;
+    }
+    
+    return 0;
+  };
+
+  const onlineCount = getOnlineUserCount();
+
+  // Smart room user request with debouncing
+  const requestRoomUsersDebounced = (roomId) => {
+    if (roomUserRequestTimeoutRef.current) {
+      clearTimeout(roomUserRequestTimeoutRef.current);
+    }
+    
+    roomUserRequestTimeoutRef.current = setTimeout(() => {
+      if (socketService.isConnected && roomId) {
+        socketService.getRoomUsers(roomId);
+      }
+    }, 300); // 300ms debounce
+  };
+
   // Fetch messages when active chat changes
   useEffect(() => {
     if (currentChatId) {
       if (activeConversation) {
+        // Always fetch latest messages in background (don't block UI)
         dispatch(fetchMessages({ conversationId: activeConversation }));
-        socketService.joinConversation(activeConversation);
+        // Join socket room if connected
+        if (socketService.isConnected) {
+          socketService.joinConversation(activeConversation);
+        }
         dispatch(resetUnreadCount({ conversationId: activeConversation }));
       } else if (activeRoom) {
+        // Always fetch latest messages in background (don't block UI)
         dispatch(fetchMessages({ roomId: activeRoom }));
-        socketService.joinRoom(activeRoom);
+        // Join socket room if connected
+        if (socketService.isConnected) {
+          socketService.joinRoom(activeRoom);
+          // Request room users only if we don't have current data
+          const roomData = roomDetails[activeRoom];
+          if (!roomData?.onlineCount && roomData?.onlineCount !== 0) {
+            requestRoomUsersDebounced(activeRoom);
+          }
+        }
         dispatch(resetUnreadCount({ roomId: activeRoom }));
       }
     }
@@ -78,7 +158,7 @@ const ChatWindow = () => {
       socketService.startTyping({
         conversationId: activeConversation,
         roomId: activeRoom,
-        userId: user._id,
+        userId: user.id,
         userName: user.name
       });
     }
@@ -100,7 +180,7 @@ const ChatWindow = () => {
       socketService.stopTyping({
         conversationId: activeConversation,
         roomId: activeRoom,
-        userId: user._id
+        userId: user.id
       });
     }
 
@@ -133,13 +213,17 @@ const ChatWindow = () => {
     };
 
     try {
-      // Send via Redux action (which will also send via API)
-      await dispatch(sendMessage(messageData)).unwrap();
+      // Send via Redux action (which adds optimistic message and gets senderId)
+      const result = await dispatch(sendMessage(messageData)).unwrap();
       
-      // Also send via socket for real-time delivery
+      // Send via socket with all required fields
       socketService.sendMessage({
-        ...messageData,
-        senderId: user._id
+        content: result.content,
+        conversationId: result.conversationId,
+        roomId: result.roomId,
+        messageType: result.messageType,
+        senderId: result.senderId,
+        tempId: result.tempId
       });
 
       setMessageText('');
@@ -151,6 +235,7 @@ const ChatWindow = () => {
       }
     } catch (error) {
       console.error('Failed to send message:', error);
+      // Could show a toast notification here
     }
   };
 
@@ -166,6 +251,9 @@ const ChatWindow = () => {
     return () => {
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
+      }
+      if (roomUserRequestTimeoutRef.current) {
+        clearTimeout(roomUserRequestTimeoutRef.current);
       }
     };
   }, []);
@@ -200,15 +288,32 @@ const ChatWindow = () => {
                 {chatInfo.name?.charAt(0).toUpperCase()}
               </div>
             )}
-            <div>
-              <h4 className={`font-medium text-sm ${isDarkTheme ? 'text-white' : 'text-gray-800'}`}>
-                {chatInfo.name}
-              </h4>
-              {chatInfo.isOnline && (
-                <p className={`text-xs ${isDarkTheme ? 'text-green-400' : 'text-green-600'}`}>
-                  Online
-                </p>
-              )}
+            <div className="flex-1">
+              <div className="flex items-center space-x-2">
+                <h4 className={`font-medium text-sm ${isDarkTheme ? 'text-white' : 'text-gray-800'}`}>
+                  {chatInfo.name}
+                </h4>
+                {loading.messages && currentMessages.length > 0 && (
+                  <div className={`w-2 h-2 rounded-full animate-pulse ${
+                    isDarkTheme ? 'bg-blue-400' : 'bg-blue-500'
+                  }`} title="Loading new messages..." />
+                )}
+              </div>
+              <div className="flex items-center space-x-2">
+                {chatInfo.isOnline && (
+                  <p className={`text-xs ${isDarkTheme ? 'text-green-400' : 'text-green-600'}`}>
+                    Online
+                  </p>
+                )}
+                {onlineCount > 0 && (
+                  <>
+                    {chatInfo.isOnline && <span className={`text-xs ${isDarkTheme ? 'text-gray-400' : 'text-gray-500'}`}>•</span>}
+                    <p className={`text-xs ${isDarkTheme ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {onlineCount} {onlineCount === 1 ? 'person' : 'people'} online
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -216,7 +321,10 @@ const ChatWindow = () => {
 
       {/* Messages Area */}
       <div className="flex-1 overflow-hidden">
-        <MessageList messages={currentMessages} loading={loading.messages} />
+        <MessageList 
+          messages={currentMessages} 
+          loading={loading.messages && currentMessages.length === 0} 
+        />
         <TypingIndicator />
       </div>
 
