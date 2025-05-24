@@ -5,6 +5,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { toggleTheme } from '../../../store/themeSlice';
 import { checkAuthStatus } from '../../../store/authSlice';
 import { Outlet } from 'react-router-dom';
+import useSocket from '../../../hooks/useSocket';
 
 const Layout = ({ children }) => {
   const theme = useSelector((state) => state.theme.current);
@@ -12,6 +13,9 @@ const Layout = ({ children }) => {
   const dispatch = useDispatch();
   const [isMounted, setIsMounted] = useState(false);
   const isInitialMount = useRef(true);
+
+  // Use the socket hook to manage connections
+  useSocket();
 
   useEffect(() => {
     setIsMounted(true);

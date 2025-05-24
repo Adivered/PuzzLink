@@ -1,5 +1,5 @@
 const chatHandler = require('./chatHandler');
-const userHandler = require('./userHandler');
+const { userHandler, cleanupStaleConnections } = require('./userHandler');
 const roomHandler = require('./roomHandler');
 const gameHandler = require('./gameHandler');
 
@@ -19,6 +19,13 @@ const initializeSocket = (io) => {
       // Handle any global cleanup here
     });
   });
+
+  // Set up periodic cleanup of stale connections (every 5 minutes)
+  setInterval(() => {
+    cleanupStaleConnections(io);
+  }, 5 * 60 * 1000); // 5 minutes
+
+  console.log('Socket handlers initialized with connection tracking');
 };
 
 module.exports = initializeSocket; 

@@ -14,12 +14,14 @@ const SOCKET_EVENTS = {
   USER_ACTIVITY: 'user_activity',
   USER_ONLINE: 'user_online',
   USER_OFFLINE: 'user_offline',
+  SWITCH_ROOM: 'switch_room',
 
   // Chat events
   JOIN_CONVERSATION: 'join_conversation',
   LEAVE_CONVERSATION: 'leave_conversation',
   SEND_MESSAGE: 'send_message',
   NEW_MESSAGE: 'new_message',
+  MESSAGE_SENT: 'message_sent',
   MESSAGE_ERROR: 'message_error',
   TYPING_START: 'typing_start',
   TYPING_STOP: 'typing_stop',
@@ -45,6 +47,8 @@ const SOCKET_EVENTS = {
   ROOM_INVITATION: 'room_invitation',
   ROOM_INVITATION_RESPONSE: 'room_invitation_response',
   INVITATION_ACCEPTED: 'invitation_accepted',
+  GET_ROOM_USERS: 'get_room_users',
+  ROOM_USERS: 'room_users',
 
   // Game events
   JOIN_GAME: 'join_game',
@@ -75,6 +79,7 @@ const ROOM_NAMES = {
   ROOM: (roomId) => `room_${roomId}`,
   GAME: (gameId) => `game_${gameId}`,
   GAME_SPECTATORS: (gameId) => `game_${gameId}_spectators`,
+  HOME: () => 'home', // Special home room identifier
 };
 
 module.exports = {

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { format, isToday, isYesterday } from 'date-fns';
+import { Clock, CheckCircle, AlertCircle } from 'lucide-react';
 
 const MessageList = ({ messages, loading }) => {
   const theme = useSelector((state) => state.theme.current);
@@ -61,6 +62,44 @@ const MessageList = ({ messages, loading }) => {
     );
   };
 
+  const getMessageStatus = (message) => {
+    const isOwnMessage = message.sender._id === user.id;
+    if (!isOwnMessage) return null;
+    
+    if (message.isOptimistic) {
+      return 'sending';
+    } else if (message.isSent || !message.isOptimistic) {
+      return 'sent';
+    } else {
+      return 'delivered';
+    }
+  };
+
+  const renderMessageStatus = (status) => {
+    if (!status) return null;
+    
+    switch (status) {
+      case 'sending':
+        return (
+          <Clock className={`w-3 h-3 ${isDarkTheme ? 'text-gray-400' : 'text-gray-500'}`} />
+        );
+      case 'sent':
+        return (
+          <CheckCircle className={`w-3 h-3 ${isDarkTheme ? 'text-green-400' : 'text-green-500'}`} />
+        );
+      case 'delivered':
+        return (
+          <CheckCircle className={`w-3 h-3 ${isDarkTheme ? 'text-blue-400' : 'text-blue-500'}`} />
+        );
+      case 'failed':
+        return (
+          <AlertCircle className={`w-3 h-3 ${isDarkTheme ? 'text-red-400' : 'text-red-500'}`} />
+        );
+      default:
+        return null;
+    }
+  };
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -90,12 +129,13 @@ const MessageList = ({ messages, loading }) => {
     >
       {messages.map((message, index) => {
         const previousMessage = index > 0 ? messages[index - 1] : null;
-        const isOwnMessage = message.sender._id === user._id;
+        const isOwnMessage = message.sender._id === user.id;
         const showDateSeparator = shouldShowDateSeparator(message, previousMessage);
         const isGrouped = shouldGroupMessage(message, previousMessage);
+        const messageStatus = getMessageStatus(message);
 
         return (
-          <div key={message._id}>
+          <div key={message._id || message.tempId}>
             {/* Date Separator */}
             {showDateSeparator && (
               <div className="flex items-center justify-center my-4">
@@ -148,8 +188,12 @@ const MessageList = ({ messages, loading }) => {
                     className={`px-3 py-2 rounded-lg max-w-full break-words ${
                       isOwnMessage
                         ? isDarkTheme
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-blue-500 text-white'
+                          ? message.isOptimistic 
+                            ? 'bg-blue-700 text-white opacity-75' 
+                            : 'bg-blue-600 text-white'
+                          : message.isOptimistic 
+                            ? 'bg-blue-400 text-white opacity-75' 
+                            : 'bg-blue-500 text-white'
                         : isDarkTheme
                           ? 'bg-gray-700 text-gray-200'
                           : 'bg-gray-200 text-gray-800'
@@ -176,12 +220,17 @@ const MessageList = ({ messages, loading }) => {
                     )}
                   </div>
 
-                  {/* Timestamp */}
-                  <span className={`text-xs mt-1 ${
-                    isDarkTheme ? 'text-gray-500' : 'text-gray-500'
-                  } ${isOwnMessage ? 'text-right' : 'text-left'}`}>
-                    {formatMessageTime(message.createdAt)}
-                  </span>
+                  {/* Timestamp and Status */}
+                  <div className={`flex items-center space-x-1 mt-1 ${
+                    isOwnMessage ? 'flex-row-reverse space-x-reverse' : ''
+                  }`}>
+                    <span className={`text-xs ${
+                      isDarkTheme ? 'text-gray-500' : 'text-gray-500'
+                    }`}>
+                      {formatMessageTime(message.createdAt)}
+                    </span>
+                    {isOwnMessage && renderMessageStatus(messageStatus)}
+                  </div>
                 </div>
               </div>
             </div>

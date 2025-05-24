@@ -4,141 +4,334 @@ import UserSocketHandler from './socket/userSocketHandler';
 import RoomSocketHandler from './socket/roomSocketHandler';
 import GameSocketHandler from './socket/gameSocketHandler';
 import { SOCKET_EVENTS } from '../constants/socketEvents';
+import store from '../store';
+import { setActiveRoom, setRoomDetails } from '../store/chatSlice';
+import { 
+  setConnecting, 
+  setConnected, 
+  setDisconnected, 
+  setConnectionError, 
+  setCurrentUser, 
+  setCurrentRoom,
+  addSocketEvent
+} from '../store/socketSlice';
 
 class SocketService {
   constructor() {
     this.socket = null;
-    this.isConnected = false;
     this.handlers = {};
+    this.connectionPromise = null;
+    this.reconnectInterval = null;
+    this.maxReconnectAttempts = 5;
+    this._isConnecting = false;
+    this.backoffDelay = 1000; // Start with 1 second
+    this.maxBackoffDelay = 30000; // Max 30 seconds
+    this.connectionAttempts = 0;
+    this.lastConnectionAttempt = 0;
+    this.minRetryInterval = 5000; // Minimum 5 seconds between attempts
   }
 
-  connect() {
-    if (this.socket?.connected) return;
+  get isConnecting() {
+    return this._isConnecting || this.reconnectInterval !== null;
+  }
 
-    this.socket = io(process.env.REACT_APP_SERVER_URL || 'http://localhost:5000', {
-      withCredentials: true,
-      transports: ['websocket', 'polling']
+  async connect() {
+    // Prevent multiple connection attempts
+    if (this.connectionPromise) {
+      return this.connectionPromise;
+    }
+
+    const state = store.getState();
+    
+    // If already connected and socket is working, return
+    if (state.socket.isConnected && this.socket?.connected) {
+      return Promise.resolve();
+    }
+
+    // If already connecting, wait for current attempt
+    if (this._isConnecting) {
+      return new Promise((resolve) => {
+        const checkConnection = () => {
+          if (!this._isConnecting) {
+            resolve();
+          } else {
+            setTimeout(checkConnection, 100);
+          }
+        };
+        checkConnection();
+      });
+    }
+
+    // Implement rate limiting to prevent spam
+    const now = Date.now();
+    const timeSinceLastAttempt = now - this.lastConnectionAttempt;
+    if (timeSinceLastAttempt < this.minRetryInterval) {
+      const waitTime = this.minRetryInterval - timeSinceLastAttempt;
+      console.log(`⏳ Rate limiting connection attempts. Waiting ${waitTime}ms before retry...`);
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          this.connect().then(resolve).catch(reject);
+        }, waitTime);
+      });
+    }
+
+    this.lastConnectionAttempt = now;
+    this.connectionAttempts++;
+
+    console.log(`🔌 Connecting to socket server... (attempt ${this.connectionAttempts})`);
+    this._isConnecting = true;
+    store.dispatch(setConnecting());
+
+    this.connectionPromise = new Promise((resolve, reject) => {
+      try {
+        this.socket = io(process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000', {
+          timeout: 10000,
+          transports: ['websocket', 'polling']
+        });
+
+        this.socket.on('connect', () => {
+          console.log('✅ Connected to socket server');
+          this._isConnecting = false;
+          // Reset connection tracking on successful connection
+          this.connectionAttempts = 0;
+          this.backoffDelay = 1000;
+          store.dispatch(setConnected({ timestamp: new Date().toISOString() }));
+          this.setupHandlers();
+          this.connectionPromise = null;
+          resolve();
+        });
+
+        this.socket.on('disconnect', (reason) => {
+          console.log('❌ Disconnected from server:', reason);
+          this._isConnecting = false;
+          store.dispatch(setDisconnected({ error: reason }));
+          this.connectionPromise = null;
+          
+          // Auto-reconnect for certain disconnect reasons
+          if (reason !== 'io server disconnect' && reason !== 'io client disconnect') {
+            this.attemptReconnect();
+          }
+        });
+
+        this.socket.on('connect_error', (error) => {
+          console.error(`❌ Connection error (attempt ${this.connectionAttempts}):`, error.message);
+          this._isConnecting = false;
+          store.dispatch(setConnectionError(error.message));
+          this.connectionPromise = null;
+          
+          // Don't immediately reject - schedule a retry with backoff
+          if (this.connectionAttempts < this.maxReconnectAttempts) {
+            this.scheduleReconnect();
+            // Don't reject here - let the scheduled reconnect handle it
+          } else {
+            console.error('❌ Max connection attempts reached. Giving up.');
+            reject(new Error(`Failed to connect after ${this.maxReconnectAttempts} attempts: ${error.message}`));
+          }
+        });
+
+      } catch (error) {
+        this._isConnecting = false;
+        store.dispatch(setConnectionError(error.message));
+        this.connectionPromise = null;
+        reject(error);
+      }
     });
+
+    return this.connectionPromise;
+  }
+
+  setupHandlers() {
+    if (!this.socket) return;
+
+    // Clean up existing handlers
+    this.destroyHandlers();
 
     // Initialize handlers
-    this.initializeHandlers();
-
-    // Core connection events
-    this.socket.on(SOCKET_EVENTS.CONNECTION, () => {
-      console.log('Connected to server');
-      this.isConnected = true;
-    });
-
-    this.socket.on(SOCKET_EVENTS.DISCONNECT, () => {
-      console.log('Disconnected from server');
-      this.isConnected = false;
-    });
+    this.handlers = {
+      chat: new ChatSocketHandler(this.socket),
+      user: new UserSocketHandler(this.socket),
+      room: new RoomSocketHandler(this.socket),
+      game: new GameSocketHandler(this.socket)
+    };
+    
+    console.log('🔧 Socket handlers initialized');
   }
 
-  initializeHandlers() {
-    // Initialize all modular handlers
-    this.handlers.chat = new ChatSocketHandler(this.socket);
-    this.handlers.user = new UserSocketHandler(this.socket);
-    this.handlers.room = new RoomSocketHandler(this.socket);
-    this.handlers.game = new GameSocketHandler(this.socket);
+  scheduleReconnect() {
+    if (this.reconnectInterval) {
+      clearTimeout(this.reconnectInterval);
+    }
+
+    // Calculate exponential backoff delay
+    const delay = Math.min(this.backoffDelay, this.maxBackoffDelay);
+    this.backoffDelay = Math.min(this.backoffDelay * 2, this.maxBackoffDelay);
+    
+    console.log(`🔄 Scheduling reconnection in ${delay}ms... (attempt ${this.connectionAttempts}/${this.maxReconnectAttempts})`);
+    
+    this.reconnectInterval = setTimeout(() => {
+      this.reconnectInterval = null;
+      this.connect().catch((error) => {
+        console.error('Scheduled reconnection failed:', error.message);
+      });
+    }, delay);
+  }
+
+  attemptReconnect() {
+    // Reset connection attempts counter for disconnect-triggered reconnects
+    this.connectionAttempts = 0;
+    this.scheduleReconnect();
   }
 
   disconnect() {
+    if (this.reconnectInterval) {
+      clearTimeout(this.reconnectInterval);
+      this.reconnectInterval = null;
+    }
+
+    this._isConnecting = false;
+    this.connectionPromise = null;
+    
+    // Reset connection tracking
+    this.connectionAttempts = 0;
+    this.backoffDelay = 1000;
+
     if (this.socket) {
-      // Cleanup all handlers
-      Object.values(this.handlers).forEach(handler => {
-        if (handler.destroy) {
-          handler.destroy();
-        }
-      });
-      
+      console.log('🔌 Disconnecting from socket server');
+      this.destroyHandlers();
       this.socket.disconnect();
       this.socket = null;
-      this.isConnected = false;
-      this.handlers = {};
+    }
+
+    store.dispatch(setDisconnected());
+  }
+
+  get isConnected() {
+    const state = store.getState();
+    return state.socket.isConnected && this.socket?.connected;
+  }
+
+  // Enhanced authentication method that sets up user for Home chat
+  authenticateUser(userId) {
+    if (!this.isConnected || !userId) {
+      console.warn('⚠️ Cannot authenticate: not connected or no userId');
+      return;
+    }
+    
+    console.log('🔐 Authenticating user for chat:', userId);
+    
+    store.dispatch(setCurrentUser(userId));
+    
+    // Join user room - this will automatically join Home room chat on backend
+    this.joinUser(userId);
+    
+    // Get user's Home room from state and set as active
+    const state = store.getState();
+    const homeRoomId = state.auth.user?.homeRoomId;
+    
+    if (homeRoomId) {
+      console.log('🏠 Setting Home room as active chat:', homeRoomId);
+      store.dispatch(setActiveRoom(homeRoomId));
+      
+      // Ensure Home room details are available for the chat UI
+      store.dispatch(setRoomDetails({
+        roomId: homeRoomId,
+        roomData: {
+          name: 'Home',
+          description: 'Global community chat',
+          isHomeRoom: true
+        }
+      }));
+      
+      // Request room users for accurate online count
+      this.getRoomUsers(homeRoomId);
+      
+      console.log('✅ Home chat ready for user');
     }
   }
 
-  // User methods (delegated to UserSocketHandler)
+  // Unified room switching method
+  switchRoom(newRoomId, leaveRoomId = null) {
+    if (!this.isConnected) return;
+    
+    const state = store.getState();
+    const currentUserId = state.socket.currentUserId;
+    
+    if (!currentUserId) return;
+    
+    this.socket.emit(SOCKET_EVENTS.SWITCH_ROOM, {
+      userId: currentUserId,
+      newRoomId,
+      leaveRoomId: leaveRoomId || state.socket.currentRoomId
+    });
+    
+    store.dispatch(setCurrentRoom(newRoomId));
+    store.dispatch(setActiveRoom(newRoomId));
+  }
+
+  // Delegate methods to handlers
   joinUser(userId) {
     this.handlers.user?.joinUser(userId);
   }
 
-  userGoingOffline(userId) {
-    this.handlers.user?.userGoingOffline(userId);
-  }
-
-  updateUserActivity(userId) {
-    this.handlers.user?.updateUserActivity(userId);
-  }
-
-  // Chat methods (delegated to ChatSocketHandler)
   joinConversation(conversationId) {
+    if (!this.isConnected) {
+      console.warn('⚠️ Cannot join conversation: socket not connected');
+      return;
+    }
     this.handlers.chat?.joinConversation(conversationId);
   }
 
   leaveConversation(conversationId) {
+    if (!this.isConnected) {
+      console.warn('⚠️ Cannot leave conversation: socket not connected');
+      return;
+    }
     this.handlers.chat?.leaveConversation(conversationId);
   }
 
   sendMessage(messageData) {
-    this.handlers.chat?.sendMessage(messageData);
+    if (!this.isConnected) {
+      console.error('❌ Cannot send message: not connected to server');
+      return null;
+    }
+    
+    return this.handlers.chat?.sendMessage(messageData);
   }
 
-  startTyping({ roomId, conversationId, userId, userName }) {
-    this.handlers.chat?.startTyping({ roomId, conversationId, userId, userName });
+  startTyping(data) {
+    if (!this.isConnected) return;
+    this.handlers.chat?.startTyping(data);
   }
 
-  stopTyping({ roomId, conversationId, userId }) {
-    this.handlers.chat?.stopTyping({ roomId, conversationId, userId });
+  stopTyping(data) {
+    if (!this.isConnected) return;
+    this.handlers.chat?.stopTyping(data);
   }
 
-  markMessagesAsRead({ messageIds, userId }) {
-    this.handlers.chat?.markMessagesAsRead({ messageIds, userId });
-  }
-
-  addReaction({ messageId, reaction, userId }) {
-    this.handlers.chat?.addReaction({ messageId, reaction, userId });
-  }
-
-  // Room methods (delegated to RoomSocketHandler)
   joinRoom(roomId) {
+    if (!this.isConnected) {
+      console.warn('⚠️ Cannot join room: socket not connected');
+      return;
+    }
     this.handlers.room?.joinRoom(roomId);
   }
 
   leaveRoom(roomId) {
+    if (!this.isConnected) {
+      console.warn('⚠️ Cannot leave room: socket not connected');
+      return;
+    }
     this.handlers.room?.leaveRoom(roomId);
   }
 
-  roomUpdated({ roomId, updateData }) {
-    this.handlers.room?.roomUpdated({ roomId, updateData });
+  getRoomUsers(roomId) {
+    if (!this.isConnected) {
+      console.warn('⚠️ Cannot get room users: socket not connected');
+      return;
+    }
+    this.handlers.room?.getRoomUsers(roomId);
   }
 
-  playerJoined({ roomId, player }) {
-    this.handlers.room?.playerJoined({ roomId, player });
-  }
-
-  playerLeft({ roomId, playerId }) {
-    this.handlers.room?.playerLeft({ roomId, playerId });
-  }
-
-  gameStarting({ roomId, countdown }) {
-    this.handlers.room?.gameStarting({ roomId, countdown });
-  }
-
-  gameStarted({ roomId, gameId }) {
-    this.handlers.room?.gameStarted({ roomId, gameId });
-  }
-
-  sendRoomInvitation({ recipientId, roomId, inviterName }) {
-    this.handlers.room?.sendRoomInvitation({ recipientId, roomId, inviterName });
-  }
-
-  roomInvitationResponse({ roomId, accepted }) {
-    this.handlers.room?.roomInvitationResponse({ roomId, accepted });
-  }
-
-  // Game methods (delegated to GameSocketHandler)
   joinGame(gameId) {
     this.handlers.game?.joinGame(gameId);
   }
@@ -147,85 +340,23 @@ class SocketService {
     this.handlers.game?.leaveGame(gameId);
   }
 
-  pieceMoved({ gameId, pieceId, fromPosition, toPosition, playerId }) {
-    this.handlers.game?.pieceMoved({ gameId, pieceId, fromPosition, toPosition, playerId });
-  }
-
-  piecePlacedCorrectly({ gameId, pieceId, position, playerId }) {
-    this.handlers.game?.piecePlacedCorrectly({ gameId, pieceId, position, playerId });
-  }
-
-  gameProgress({ gameId, progress, playerId }) {
-    this.handlers.game?.gameProgress({ gameId, progress, playerId });
-  }
-
-  hintUsed({ gameId, hintType, playerId }) {
-    this.handlers.game?.hintUsed({ gameId, hintType, playerId });
-  }
-
-  gameCompleted({ gameId, completionTime, playerId }) {
-    this.handlers.game?.gameCompleted({ gameId, completionTime, playerId });
-  }
-
-  cursorPosition({ gameId, x, y, playerId }) {
-    this.handlers.game?.cursorPosition({ gameId, x, y, playerId });
-  }
-
-  turnStarted({ gameId, playerId, turnNumber }) {
-    this.handlers.game?.turnStarted({ gameId, playerId, turnNumber });
-  }
-
-  turnEnded({ gameId, playerId, turnNumber }) {
-    this.handlers.game?.turnEnded({ gameId, playerId, turnNumber });
-  }
-
-  gamePaused({ gameId, playerId }) {
-    this.handlers.game?.gamePaused({ gameId, playerId });
-  }
-
-  gameResumed({ gameId, playerId }) {
-    this.handlers.game?.gameResumed({ gameId, playerId });
-  }
-
-  joinAsSpectator({ gameId }) {
-    this.handlers.game?.joinAsSpectator({ gameId });
-  }
-
-  requestGameState({ gameId }) {
-    this.handlers.game?.requestGameState({ gameId });
-  }
-
-  // Event subscription methods for components
-  onRoomEvent(event, callback) {
-    this.handlers.room?.on(event, callback);
-  }
-
-  offRoomEvent(event, callback) {
-    this.handlers.room?.off(event, callback);
-  }
-
-  onGameEvent(event, callback) {
-    this.handlers.game?.on(event, callback);
-  }
-
-  offGameEvent(event, callback) {
-    this.handlers.game?.off(event, callback);
-  }
-
-  // Utility methods
-  isSocketConnected() {
-    return this.isConnected && this.socket?.connected;
-  }
-
-  getSocket() {
-    return this.socket;
-  }
-
-  getHandler(type) {
-    return this.handlers[type];
+  // Cleanup method
+  destroyHandlers() {
+    Object.values(this.handlers).forEach(handler => {
+      if (handler && typeof handler.destroy === 'function') {
+        handler.destroy();
+      }
+    });
+    this.handlers = {};
   }
 }
 
-// Create a singleton instance
+// Export singleton instance
 const socketService = new SocketService();
+
+// Make it available globally for debugging in development
+if (process.env.NODE_ENV === 'development') {
+  window.socketService = socketService;
+}
+
 export default socketService; 

@@ -1,4 +1,6 @@
 import { SOCKET_EVENTS } from '../../constants/socketEvents';
+import store from '../../store';
+import { setRoomDetails, setRoomUsers } from '../../store/chatSlice';
 
 class RoomSocketHandler {
   constructor(socket) {
@@ -7,14 +9,40 @@ class RoomSocketHandler {
     this.eventCallbacks = new Map();
   }
 
-  initializeListeners() {
+  initializeListeners() {    
     // Room membership events
     this.socket.on(SOCKET_EVENTS.USER_JOINED_ROOM, (data) => {
+      // Store room details when we get room information
+      if (data.roomId && data.roomName) {
+        store.dispatch(setRoomDetails({
+          roomId: data.roomId,
+          roomData: {
+            name: data.roomName,
+            isHomeRoom: data.roomName === 'Home',
+            // Add other room data as it becomes available
+          }
+        }));
+      }
+      
       this.notifyCallbacks('userJoinedRoom', data);
     });
 
     this.socket.on(SOCKET_EVENTS.USER_LEFT_ROOM, (data) => {
       this.notifyCallbacks('userLeftRoom', data);
+    });
+
+    // Room users response
+    this.socket.on(SOCKET_EVENTS.ROOM_USERS, (data) => {
+      const { roomId, users } = data;
+      
+      // Update room details with actual online count and user list
+      store.dispatch(setRoomUsers({
+        roomId,
+        users,
+        onlineCount: users.length
+      }));
+      
+      this.notifyCallbacks('roomUsers', data);
     });
 
     // Room updates
@@ -85,6 +113,10 @@ class RoomSocketHandler {
     this.socket.emit(SOCKET_EVENTS.LEAVE_ROOM, roomId);
   }
 
+  getRoomUsers(roomId) {
+    this.socket.emit(SOCKET_EVENTS.GET_ROOM_USERS, roomId);
+  }
+
   roomUpdated({ roomId, updateData }) {
     this.socket.emit(SOCKET_EVENTS.ROOM_UPDATED, { roomId, updateData });
   }
@@ -118,6 +150,7 @@ class RoomSocketHandler {
     // Remove all listeners
     this.socket.off(SOCKET_EVENTS.USER_JOINED_ROOM);
     this.socket.off(SOCKET_EVENTS.USER_LEFT_ROOM);
+    this.socket.off(SOCKET_EVENTS.ROOM_USERS);
     this.socket.off(SOCKET_EVENTS.ROOM_UPDATE);
     this.socket.off(SOCKET_EVENTS.PLAYER_JOINED);
     this.socket.off(SOCKET_EVENTS.PLAYER_LEFT);
