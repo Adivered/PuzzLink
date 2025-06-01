@@ -1,6 +1,5 @@
 import React, { useState, useRef } from "react";
 import { gsap } from "gsap";
-import useIsomorphicLayoutEffect from "../../hooks/useIsomorphicLayoutEffect";
 import { PhotoIcon } from "@heroicons/react/24/outline";
 
 const ImageSelector = ({ currentImage, onSelectImage, isDarkTheme }) => {

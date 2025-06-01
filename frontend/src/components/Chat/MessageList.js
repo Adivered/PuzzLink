@@ -1,15 +1,10 @@
 import React, { useEffect, useRef } from 'react';
-import { useSelector } from 'react-redux';
 import { format, isToday, isYesterday } from 'date-fns';
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react';
 
-const MessageList = ({ messages, loading }) => {
-  const theme = useSelector((state) => state.theme.current);
-  const user = useSelector((state) => state.auth.user);
+const MessageList = ({ messages, loading, user, isDarkTheme }) => {
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
-
-  const isDarkTheme = theme === 'dark';
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -211,7 +206,7 @@ const MessageList = ({ messages, loading }) => {
                       <div>
                         <img
                           src={message.content}
-                          alt="Shared image"
+                          alt="Shared content"
                           className="max-w-full h-auto rounded"
                         />
                       </div>
@@ -225,7 +220,7 @@ const MessageList = ({ messages, loading }) => {
                     isOwnMessage ? 'flex-row-reverse space-x-reverse' : ''
                   }`}>
                     <span className={`text-xs ${
-                      isDarkTheme ? 'text-gray-500' : 'text-gray-500'
+                      isDarkTheme ? 'text-gray-400' : 'text-gray-500'
                     }`}>
                       {formatMessageTime(message.createdAt)}
                     </span>

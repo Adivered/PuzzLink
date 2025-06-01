@@ -7,19 +7,24 @@ const toastSlice = createSlice({
   },
   reducers: {
     addToast: (state, action) => {
-      const { message, type } = action.payload;
-      const id = Date.now();
-      state.toasts.push({ id, message, type });
-      // Automatically remove the toast after 3 seconds
-      setTimeout(() => {
-        state.toasts = state.toasts.filter((toast) => toast.id !== id);
-      }, 3000);
+      const { message, type, duration = 5000 } = action.payload;
+      const id = Date.now() + Math.random(); // More unique ID
+      state.toasts.push({ 
+        id, 
+        message, 
+        type, 
+        timestamp: new Date().toISOString(),
+        duration 
+      });
     },
     removeToast: (state, action) => {
       state.toasts = state.toasts.filter((toast) => toast.id !== action.payload);
     },
+    clearAllToasts: (state) => {
+      state.toasts = [];
+    },
   },
 });
 
-export const { addToast, removeToast } = toastSlice.actions;
+export const { addToast, removeToast, clearAllToasts } = toastSlice.actions;
 export default toastSlice.reducer;

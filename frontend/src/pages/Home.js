@@ -6,6 +6,7 @@ import NotAUserPopup from '../components/common/NotAUserPopup';
 const Home = () => {
   const { user } = useSelector((state) => state.auth);
   const [showPopup, setShowPopup] = useState(user ? false : true);
+  
   const closePopup = () => {
     setShowPopup(false);
   };
@@ -16,6 +17,7 @@ const Home = () => {
   }, [user]);
 
 
+
   return (
     <>
       <LandingPage/>
@@ -24,6 +26,8 @@ const Home = () => {
           onClose={() => closePopup()}
         />
       )}
+      
+
     </>
   );
 };

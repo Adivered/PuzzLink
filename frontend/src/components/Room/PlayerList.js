@@ -1,13 +1,34 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useSelector, useDispatch } from "react-redux";
 import { gsap } from "gsap";
 import useIsomorphicLayoutEffect from "../../hooks/useIsomorphicLayoutEffect";
-import { UserPlusIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { TrashIcon } from "@heroicons/react/24/outline";
+import { addToast } from "../../store/toastSlice";
+import UserSearch from "../common/UserSearch";
+import axios from "axios";
 
-const PlayerList = ({ players, isCreator, onAddPlayer, onRemovePlayer, isDarkTheme }) => {
-  const [newPlayerEmail, setNewPlayerEmail] = useState("");
-  const [localToasts, setLocalToasts] = useState([]); // Local state for toasts
+const PlayerList = ({ players, isCreator, onRemovePlayer, isDarkTheme, roomId }) => {
+  const dispatch = useDispatch();
+  const user = useSelector((state) => state.auth.user);
+  const [localToasts, setLocalToasts] = useState([]);
   const listRef = useRef(null);
   const isMounted = useRef(true);
+
+  // Deduplicate players to prevent React key conflicts
+  const uniquePlayers = React.useMemo(() => {
+    if (!players || !Array.isArray(players)) {
+      return [];
+    }
+    
+    const seen = new Set();
+    return players.filter(player => {
+      if (!player || !player._id || seen.has(player._id)) {
+        return false;
+      }
+      seen.add(player._id);
+      return true;
+    });
+  }, [players]);
 
   useEffect(() => {
     return () => {
@@ -17,16 +38,19 @@ const PlayerList = ({ players, isCreator, onAddPlayer, onRemovePlayer, isDarkThe
 
   useIsomorphicLayoutEffect(() => {
     const ctx = gsap.context(() => {
-      gsap.from(".player-item", {
-        opacity: 0,
-        x: -20,
-        duration: 0.5,
-        stagger: 0.1,
-        ease: "expo.out",
-      });
+      const playerItems = document.querySelectorAll(".player-item");
+      if (playerItems.length > 0) {
+        gsap.from(".player-item", {
+          opacity: 0,
+          x: -20,
+          duration: 0.5,
+          stagger: 0.1,
+          ease: "expo.out",
+        });
+      }
     }, listRef);
     return () => ctx.revert();
-  }, [players]);
+  }, [uniquePlayers]);
 
   const addLocalToast = (message, type) => {
     const id = Date.now();
@@ -38,27 +62,54 @@ const PlayerList = ({ players, isCreator, onAddPlayer, onRemovePlayer, isDarkThe
     }, 3000);
   };
 
-  const handleAddPlayer = async (e) => {
-    e.preventDefault();
-    if (newPlayerEmail) {
-      try {
-        await onAddPlayer(newPlayerEmail);
-        if (isMounted.current) {
-          addLocalToast(`Player ${newPlayerEmail} added successfully!`, "success");
-          setNewPlayerEmail("");
-        }
-      } catch (error) {
-        if (isMounted.current) {
-          addLocalToast(
-            `Failed to add player: ${error.message || "Unknown error"}`,
-            "error"
-          );
-        }
+  const handleInviteUser = async (selectedUser) => {
+    try {
+      // Check if user is already in the room
+      if (uniquePlayers.find(p => p._id === selectedUser._id)) {
+        addLocalToast(`${selectedUser.name} is already in the room!`, "info");
+        return;
       }
-    } else {
-      if (isMounted.current) {
-        addLocalToast("Please enter a valid email address.", "error");
+
+      // Check if we have required data
+  
+      if (!roomId || !user) {
+        addLocalToast("Unable to send invitation. Missing room or user data.", "error");
+        console.error('❌ Missing data for invitation:', { roomId, user });
+        return;
       }
+
+      // Send invitation via API (this will handle both online and offline users)
+      const response = await axios.post(`/api/rooms/${roomId}/invite`, {
+        userIds: [selectedUser._id]
+      });
+
+      // Show success toast
+      dispatch(addToast({
+        message: `Invitation sent to ${selectedUser.name}!`,
+        type: 'success'
+      }));
+
+      addLocalToast(`Invitation sent to ${selectedUser.name}!`, "success");
+      
+      console.log('Invitation sent successfully:', response.data);
+    } catch (error) {
+      console.error('Failed to invite user:', error);
+      
+      let errorMessage = `Failed to invite ${selectedUser.name}`;
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      addLocalToast(errorMessage, "error");
+      
+      // Show global error toast for serious issues
+      dispatch(addToast({
+        message: 'Failed to send invitation. Please try again.',
+        type: 'error'
+      }));
     }
   };
 
@@ -69,11 +120,31 @@ const PlayerList = ({ players, isCreator, onAddPlayer, onRemovePlayer, isDarkThe
         addLocalToast("Player removed successfully!", "success");
       }
     } catch (error) {
+      console.error('Failed to remove player:', error);
+      
+      let errorMessage = "Failed to remove player";
+      
+      // Handle specific error cases
+      if (error.response?.status === 403) {
+        errorMessage = "Only the room creator can remove players";
+      } else if (error.response?.status === 404) {
+        errorMessage = "Room or player not found";
+      } else if (error.response?.status === 400) {
+        errorMessage = error.response?.data?.message || "Cannot remove this player";
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       if (isMounted.current) {
-        addLocalToast(
-          `Failed to remove player: ${error.message || "Unknown error"}`,
-          "error"
-        );
+        addLocalToast(errorMessage, "error");
+        
+        // Also show global toast for important errors
+        dispatch(addToast({
+          message: errorMessage,
+          type: 'error'
+        }));
       }
     }
   };
@@ -90,10 +161,10 @@ const PlayerList = ({ players, isCreator, onAddPlayer, onRemovePlayer, isDarkThe
           isDarkTheme ? "text-white" : "text-gray-900"
         }`}
       >
-        Players ({players.length})
+        Players ({uniquePlayers.length})
       </h3>
       <ul className="space-y-3">
-        {players.map((player) => {
+        {uniquePlayers.map((player) => {
           const username = player?.name || "Unknown Player";
           const avatarInitial = username.charAt(0).toUpperCase();
 
@@ -108,18 +179,34 @@ const PlayerList = ({ players, isCreator, onAddPlayer, onRemovePlayer, isDarkThe
               }`}
             >
               <div className="flex items-center space-x-4">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold transition-colors duration-300">
-                  {avatarInitial}
+                {player.picture ? (
+                  <img
+                    src={player.picture}
+                    alt={username}
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold transition-colors duration-300">
+                    {avatarInitial}
+                  </div>
+                )}
+                <div className="flex flex-col">
+                  <span
+                    className={`text-base font-medium transition-colors duration-300 ${
+                      isDarkTheme ? "text-gray-100" : "text-gray-800"
+                    }`}
+                  >
+                    {username}
+                  </span>
+                  {player.isOnline && (
+                    <span className="text-xs text-green-500 flex items-center">
+                      <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
+                      Online
+                    </span>
+                  )}
                 </div>
-                <span
-                  className={`text-base font-medium transition-colors duration-300 ${
-                    isDarkTheme ? "text-gray-100" : "text-gray-800"
-                  }`}
-                >
-                  {username}
-                </span>
               </div>
-              {isCreator && (
+              {isCreator && player._id !== user?.id && (
                 <button
                   onClick={() => handleRemovePlayer(player._id)}
                   className={`p-1 rounded-full transition-colors duration-300 ${
@@ -127,6 +214,7 @@ const PlayerList = ({ players, isCreator, onAddPlayer, onRemovePlayer, isDarkThe
                       ? "text-red-400 hover:text-red-500 hover:bg-gray-600"
                       : "text-red-500 hover:text-red-600 hover:bg-gray-200"
                   }`}
+                  title="Remove player"
                 >
                   <TrashIcon className="w-5 h-5" />
                 </button>
@@ -135,31 +223,21 @@ const PlayerList = ({ players, isCreator, onAddPlayer, onRemovePlayer, isDarkThe
           );
         })}
       </ul>
+      
       {isCreator && (
-        <form
-          onSubmit={handleAddPlayer}
-          className="mt-6 flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 justify-center"
-        >
-          <input
-            type="email"
-            value={newPlayerEmail}
-            onChange={(e) => setNewPlayerEmail(e.target.value)}
-            placeholder="Enter player's email"
-            className={`flex-grow p-3 rounded-lg border transition-colors duration-300 ${
-              isDarkTheme
-                ? "bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400 focus:ring-blue-500"
-                : "bg-white border-gray-300 text-gray-800 placeholder-gray-500 focus:ring-blue-400"
-            } focus:outline-none focus:ring-2 shadow-sm sm:max-w-md`}
+        <div className="mt-6">
+          <label className="block mb-2 font-medium">Invite More Players</label>
+          <UserSearch
+            onSelectUser={handleInviteUser}
+            placeholder="Search and invite players..."
+            className="w-full"
           />
-          <button
-            type="submit"
-            className={`px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-all duration-300 flex items-center justify-center space-x-2 shadow-sm hover:shadow-md sm:w-auto w-full max-w-xs mx-auto`}
-          >
-            <UserPlusIcon className="w-5 h-5" />
-            <span>Add Player</span>
-          </button>
-        </form>
+          <p className={`text-xs mt-1 ${isDarkTheme ? 'text-gray-400' : 'text-gray-600'}`}>
+            Search for users to invite them to your room. They will be added automatically when they accept.
+          </p>
+        </div>
       )}
+      
       {/* Local Toasts Below Player List */}
       <div className="mt-4 space-y-2">
         {localToasts.map((toast) => (
@@ -170,7 +248,9 @@ const PlayerList = ({ players, isCreator, onAddPlayer, onRemovePlayer, isDarkThe
                 ? "bg-green-500"
                 : toast.type === "error"
                   ? "bg-red-500"
-                  : "bg-blue-500"
+                  : toast.type === "info"
+                    ? "bg-blue-500"
+                    : "bg-gray-500"
             }`}
           >
             <span>{toast.message}</span>

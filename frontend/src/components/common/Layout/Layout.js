@@ -6,6 +6,7 @@ import { toggleTheme } from '../../../store/themeSlice';
 import { checkAuthStatus } from '../../../store/authSlice';
 import { Outlet } from 'react-router-dom';
 import useSocket from '../../../hooks/useSocket';
+import useSocketEventHandlers from '../../../hooks/useSocketEventHandlers';
 
 const Layout = ({ children }) => {
   const theme = useSelector((state) => state.theme.current);
@@ -16,6 +17,9 @@ const Layout = ({ children }) => {
 
   // Use the socket hook to manage connections
   useSocket();
+  
+  // Use the socket event handlers hook to handle events globally
+  useSocketEventHandlers();
 
   useEffect(() => {
     setIsMounted(true);
@@ -32,6 +36,8 @@ const Layout = ({ children }) => {
   useEffect(() => {
     if (isMounted) {
       document.body.classList.toggle('dark', theme === 'dark');
+      // Add data-theme attribute for scrollbar styling
+      document.documentElement.setAttribute('data-theme', theme);
     }
   }, [theme, isMounted]);
 

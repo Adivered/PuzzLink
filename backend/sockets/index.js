@@ -3,6 +3,7 @@ const { userHandler, cleanupStaleConnections } = require('./userHandler');
 const roomHandler = require('./roomHandler');
 const gameHandler = require('./gameHandler');
 const whiteboardHandler = require('./whiteboardHandler');
+const puzzleHandler = require('./puzzleHandler');
 
 const initializeSocket = (io) => {
   io.on('connection', (socket) => {
@@ -14,6 +15,7 @@ const initializeSocket = (io) => {
     roomHandler(socket, io);
     gameHandler(socket, io);
     whiteboardHandler(socket, io);
+    puzzleHandler(socket, io);
 
     // Global disconnect handler
     socket.on('disconnect', async () => {

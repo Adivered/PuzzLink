@@ -1,53 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
 
-// Async thunks for API calls
-export const fetchConversations = createAsyncThunk(
-  'chat/fetchConversations',
-  async (_, { rejectWithValue }) => {
-    try {
-      const response = await axios.get('/api/chat/conversations');
-      return response.data.data;
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to fetch conversations');
-    }
-  }
-);
-
-export const fetchRoomForChat = createAsyncThunk(
-  'chat/fetchRoomForChat',
-  async (roomId, { rejectWithValue }) => {
-    try {
-      const response = await axios.get(`/api/rooms/${roomId}`);
-      return { roomId, roomData: response.data };
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to fetch room');
-    }
-  }
-);
-
-export const fetchMessages = createAsyncThunk(
-  'chat/fetchMessages',
-  async ({ conversationId, roomId, page = 1 }, { rejectWithValue }) => {
-    try {
-      const params = new URLSearchParams();
-      if (conversationId) params.append('conversationId', conversationId);
-      if (roomId) params.append('roomId', roomId);
-      params.append('page', page);
-
-      const response = await axios.get(`/api/chat/messages?${params}`);
-      return { 
-        messages: response.data.data, 
-        conversationId, 
-        roomId,
-        page 
-      };
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to fetch messages');
-    }
-  }
-);
-
+// Keep only essential API calls - most data will come from socket events
 export const sendMessage = createAsyncThunk(
   'chat/sendMessage',
   async ({ content, conversationId, roomId, messageType = 'text' }, { rejectWithValue, getState, dispatch }) => {
@@ -89,20 +42,6 @@ export const sendMessage = createAsyncThunk(
   }
 );
 
-export const createConversation = createAsyncThunk(
-  'chat/createConversation',
-  async ({ participantId }, { rejectWithValue }) => {
-    try {
-      const response = await axios.post('/api/chat/conversations', {
-        participantId
-      });
-      return response.data.data;
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to create conversation');
-    }
-  }
-);
-
 const initialState = {
   conversations: [],
   messages: {},
@@ -111,7 +50,6 @@ const initialState = {
   roomDetails: {},
   isOpen: false,
   isMinimized: false,
-  typingUsers: {},
   onlineUsers: [],
   unreadCounts: {},
   loading: {
@@ -119,13 +57,16 @@ const initialState = {
     messages: false,
     sending: false
   },
-  error: null
+  error: null,
+  // Add socket-driven state
+  isInitialized: false
 };
 
 const chatSlice = createSlice({
   name: 'chat',
   initialState,
   reducers: {
+    // UI state management
     toggleChat: (state) => {
       state.isOpen = !state.isOpen;
       if (state.isOpen) {
@@ -150,12 +91,48 @@ const chatSlice = createSlice({
     
     setActiveConversation: (state, action) => {
       state.activeConversation = action.payload;
-      state.activeRoom = null;
+      // OPTIMIZATION: Don't clear activeRoom when switching to conversations
+      // This allows users to stay in their room while browsing chat
     },
     
+    // OPTIMIZATION: Enhanced room handling to prevent interference with room state
     setActiveRoom: (state, action) => {
       state.activeRoom = action.payload;
       state.activeConversation = null;
+    },
+
+    // OPTIMIZATION: New action for chat-only room switching (doesn't affect room state)
+    setActiveChatRoom: (state, action) => {
+      state.activeRoom = action.payload;
+      state.activeConversation = null;
+      // This action is specifically for chat navigation and doesn't trigger room switching
+    },
+
+    // Socket-driven data updates (replace API calls)
+    initializeChatData: (state, action) => {
+      const { conversations, roomDetails, messages } = action.payload;
+      state.conversations = conversations || [];
+      state.roomDetails = roomDetails || {};
+      state.messages = messages || {};
+      state.isInitialized = true;
+      state.loading.conversations = false;
+    },
+
+    updateConversationsFromSocket: (state, action) => {
+      state.conversations = action.payload;
+    },
+
+    updateMessagesFromSocket: (state, action) => {
+      const { chatId, messages } = action.payload;
+      state.messages[chatId] = messages;
+    },
+
+    addConversationFromSocket: (state, action) => {
+      const conversation = action.payload;
+      const exists = state.conversations.find(c => c._id === conversation._id);
+      if (!exists) {
+        state.conversations.unshift(conversation);
+      }
     },
     
     setRoomDetails: (state, action) => {
@@ -166,7 +143,6 @@ const chatSlice = createSlice({
     setRoomUsers: (state, action) => {
       const { roomId, users, onlineCount } = action.payload;
       
-      // Update room details with actual online count and user list
       if (!state.roomDetails[roomId]) {
         state.roomDetails[roomId] = {};
       }
@@ -174,8 +150,45 @@ const chatSlice = createSlice({
       state.roomDetails[roomId] = {
         ...state.roomDetails[roomId],
         onlineUsers: users,
-        onlineCount: onlineCount
+        onlineCount: onlineCount || users?.length || 0
       };
+    },
+
+    updateRoomFromSocket: (state, action) => {
+      const { roomId, roomData } = action.payload;
+      
+      if (!state.roomDetails[roomId]) {
+        state.roomDetails[roomId] = {};
+      }
+      
+      state.roomDetails[roomId] = {
+        ...state.roomDetails[roomId],
+        ...roomData
+      };
+    },
+
+    removeRoomFromChat: (state, action) => {
+      const { roomId } = action.payload;
+      
+      // Remove room from roomDetails
+      if (state.roomDetails[roomId]) {
+        delete state.roomDetails[roomId];
+      }
+      
+      // Remove messages for this room
+      if (state.messages[roomId]) {
+        delete state.messages[roomId];
+      }
+      
+      // Clear active room if it's the removed room
+      if (state.activeRoom === roomId) {
+        state.activeRoom = null;
+      }
+      
+      // Remove unread count for this room
+      if (state.unreadCounts[roomId]) {
+        delete state.unreadCounts[roomId];
+      }
     },
     
     addMessage: (state, action) => {
@@ -198,7 +211,6 @@ const chatSlice = createSlice({
       }
     },
     
-    // Add optimistic message (temporary message while sending)
     addOptimisticMessage: (state, action) => {
       const { tempId, content, senderId, senderName, conversationId, roomId, messageType = 'text' } = action.payload;
       const key = conversationId || roomId;
@@ -209,7 +221,7 @@ const chatSlice = createSlice({
       
       const optimisticMessage = {
         tempId,
-        _id: tempId, // Use tempId as _id temporarily
+        _id: tempId,
         content,
         sender: {
           _id: senderId,
@@ -219,50 +231,30 @@ const chatSlice = createSlice({
         room: roomId,
         messageType,
         createdAt: new Date().toISOString(),
-        isOptimistic: true // Flag to identify optimistic messages
+        isOptimistic: true
       };
       
       state.messages[key].push(optimisticMessage);
     },
     
-    // Replace optimistic message with real message from server
-    replaceOptimisticMessage: (state, action) => {
-      const { tempId, realMessage } = action.payload;
-      const key = realMessage.conversation || realMessage.room;
-      
-      if (state.messages[key]) {
-        const index = state.messages[key].findIndex(m => m.tempId === tempId);
-        if (index !== -1) {
-          state.messages[key][index] = realMessage;
-        }
-      }
-    },
-    
-    // Mark optimistic message as sent (simple status update)
     markMessageAsSent: (state, action) => {
       const { tempId, messageId } = action.payload;
-      console.log('🔄 markMessageAsSent called with:', { tempId, messageId });
       
-      // Find the message across all conversations/rooms
       for (const key in state.messages) {
         const messages = state.messages[key];
         const index = messages.findIndex(m => m.tempId === tempId);
         if (index !== -1) {
-          console.log('✅ Found message to mark as sent:', messages[index]);
-          // Update the message status and add real message ID
           state.messages[key][index] = {
             ...state.messages[key][index],
             _id: messageId,
             isOptimistic: false,
             isSent: true
           };
-          console.log('📤 Updated message:', state.messages[key][index]);
           break;
         }
       }
     },
     
-    // Remove failed optimistic message
     removeOptimisticMessage: (state, action) => {
       const { tempId, conversationId, roomId } = action.payload;
       const key = conversationId || roomId;
@@ -278,29 +270,6 @@ const chatSlice = createSlice({
       if (conversation) {
         conversation.lastMessage = message;
         conversation.updatedAt = message.createdAt;
-      }
-    },
-    
-    setTypingUser: (state, action) => {
-      const { roomId, conversationId, userId, userName } = action.payload;
-      const key = roomId || conversationId;
-      
-      if (!state.typingUsers[key]) {
-        state.typingUsers[key] = [];
-      }
-      
-      const existing = state.typingUsers[key].find(u => u.userId === userId);
-      if (!existing) {
-        state.typingUsers[key].push({ userId, userName });
-      }
-    },
-    
-    removeTypingUser: (state, action) => {
-      const { roomId, conversationId, userId } = action.payload;
-      const key = roomId || conversationId;
-      
-      if (state.typingUsers[key]) {
-        state.typingUsers[key] = state.typingUsers[key].filter(u => u.userId !== userId);
       }
     },
     
@@ -335,93 +304,17 @@ const chatSlice = createSlice({
   
   extraReducers: (builder) => {
     builder
-      // Fetch conversations
-      .addCase(fetchConversations.pending, (state) => {
-        state.loading.conversations = true;
-        state.error = null;
-      })
-      .addCase(fetchConversations.fulfilled, (state, action) => {
-        state.loading.conversations = false;
-        state.conversations = action.payload;
-      })
-      .addCase(fetchConversations.rejected, (state, action) => {
-        state.loading.conversations = false;
-        state.error = action.payload;
-      })
-      
-      // Fetch messages
-      .addCase(fetchMessages.pending, (state) => {
-        state.loading.messages = true;
-        state.error = null;
-      })
-      .addCase(fetchMessages.fulfilled, (state, action) => {
-        state.loading.messages = false;
-        const { messages, conversationId, roomId, page } = action.payload;
-        const key = conversationId || roomId;
-        
-        if (page === 1) {
-          // For first page, merge with existing messages intelligently
-          const existingMessages = state.messages[key] || [];
-          const newMessages = messages || [];
-          
-          // Keep optimistic messages and merge with fetched messages
-          const optimisticMessages = existingMessages.filter(m => m.isOptimistic);
-          const nonOptimisticExisting = existingMessages.filter(m => !m.isOptimistic);
-          
-          // Create a map for quick lookup of existing message IDs
-          const existingIds = new Set(nonOptimisticExisting.map(m => m._id));
-          
-          // Add only new messages that don't already exist
-          const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m._id));
-          
-          // Combine: existing non-optimistic + new unique + optimistic
-          const allMessages = [...nonOptimisticExisting, ...uniqueNewMessages, ...optimisticMessages];
-          
-          // Sort by creation time
-          state.messages[key] = allMessages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-        } else {
-          // For pagination, prepend older messages
-          state.messages[key] = [...(messages || []), ...(state.messages[key] || [])];
-        }
-      })
-      .addCase(fetchMessages.rejected, (state, action) => {
-        state.loading.messages = false;
-        state.error = action.payload;
-      })
-      
-      // Send message (now just for optimistic updates)
+      // Send message (only for optimistic updates)
       .addCase(sendMessage.pending, (state) => {
         state.loading.sending = true;
         state.error = null;
       })
       .addCase(sendMessage.fulfilled, (state, action) => {
         state.loading.sending = false;
-        // Optimistic message is already added, socket will handle the real message
       })
       .addCase(sendMessage.rejected, (state, action) => {
         state.loading.sending = false;
         state.error = action.payload;
-      })
-      
-      // Create conversation
-      .addCase(createConversation.fulfilled, (state, action) => {
-        const conversation = action.payload;
-        const exists = state.conversations.find(c => c._id === conversation._id);
-        if (!exists) {
-          state.conversations.unshift(conversation);
-        }
-        state.activeConversation = conversation._id;
-      })
-      
-      // Fetch room for chat
-      .addCase(fetchRoomForChat.fulfilled, (state, action) => {
-        const { roomId, roomData } = action.payload;
-        state.roomDetails[roomId] = {
-          name: roomData.name,
-          image: roomData.image,
-          creator: roomData.creator,
-          players: roomData.players
-        };
       });
   }
 });
@@ -433,16 +326,20 @@ export const {
   closeChat,
   setActiveConversation,
   setActiveRoom,
+  setActiveChatRoom,
+  initializeChatData,
+  updateConversationsFromSocket,
+  updateMessagesFromSocket,
+  addConversationFromSocket,
   setRoomDetails,
   setRoomUsers,
+  updateRoomFromSocket,
+  removeRoomFromChat,
   addMessage,
   addOptimisticMessage,
-  replaceOptimisticMessage,
   markMessageAsSent,
   removeOptimisticMessage,
   updateConversationLastMessage,
-  setTypingUser,
-  removeTypingUser,
   setUserOnline,
   setUserOffline,
   incrementUnreadCount,

@@ -1,19 +1,25 @@
-import { useState, useRef } from "react";
+import { useRef } from "react";
+import UserSearch from "../../common/UserSearch";
 
 const RoomConfigStation = ({ roomData, updateRoomData, isActive, isDarkTheme }) => {
   const stationRef = useRef(null);
-  const [inviteEmail, setInviteEmail] = useState("");
 
-  const handleInvitePlayer = (e) => {
-    e.preventDefault();
-    if (inviteEmail && !roomData.invites.includes(inviteEmail)) {
-      updateRoomData({ invites: [...roomData.invites, inviteEmail] });
-      setInviteEmail("");
+  const handleInviteUser = (selectedUser) => {
+    // Check if user is already invited
+    if (roomData.invites.find(u => u._id === selectedUser._id)) {
+      return;
     }
+
+    // Add to room data invites list (will be used after room creation)
+    updateRoomData({ 
+      invites: [...roomData.invites, selectedUser] 
+    });
   };
 
-  const handleRemoveInvite = (index) => {
-    updateRoomData({ invites: roomData.invites.filter((_, i) => i !== index) });
+  const handleRemoveInvite = (userId) => {
+    updateRoomData({ 
+      invites: roomData.invites.filter(u => u._id !== userId) 
+    });
   };
 
   return (
@@ -25,6 +31,7 @@ const RoomConfigStation = ({ roomData, updateRoomData, isActive, isDarkTheme }) 
       style={{ display: isActive ? "block" : "none" }}
     >
       <h2 className="text-2xl font-bold mb-6 text-center">Room Configuration</h2>
+      
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label className="block mb-2 font-medium">Room Name</label>
@@ -57,25 +64,14 @@ const RoomConfigStation = ({ roomData, updateRoomData, isActive, isDarkTheme }) 
         </div>
         <div className="md:col-span-2">
           <label className="block mb-2 font-medium">Invite Players</label>
-          <div className="flex">
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              className={`flex-grow p-3 border rounded-l-lg ${
-                isDarkTheme ? "bg-gray-700 border-gray-600 text-white" : "bg-white border-gray-300 text-gray-800"
-              }`}
-              placeholder="Enter player's email"
-            />
-            <button
-              onClick={handleInvitePlayer}
-              className={`px-4 py-3 rounded-r-lg font-medium ${
-                isDarkTheme ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-blue-500 hover:bg-blue-600 text-white"
-              }`}
-            >
-              Invite
-            </button>
-          </div>
+          <UserSearch
+            onSelectUser={handleInviteUser}
+            placeholder="Search and invite players..."
+            className="w-full"
+          />
+          <p className={`text-xs mt-1 ${isDarkTheme ? 'text-gray-400' : 'text-gray-600'}`}>
+            Search for users by name or email. Invitations will be sent after room creation.
+          </p>
         </div>
         <div className="md:col-span-2">
           <label className="flex items-center">
@@ -92,19 +88,53 @@ const RoomConfigStation = ({ roomData, updateRoomData, isActive, isDarkTheme }) 
           </label>
         </div>
       </div>
+      
       {roomData.invites.length > 0 && (
         <div className="mt-6">
-          <h3 className="font-bold mb-3">Invited Players:</h3>
+          <h3 className="font-bold mb-3">Players to Invite ({roomData.invites.length}):</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {roomData.invites.map((invite, index) => (
+            {roomData.invites.map((invitedUser) => (
               <div
-                key={index}
+                key={invitedUser._id}
                 className={`flex justify-between items-center p-3 rounded-lg ${
                   isDarkTheme ? "bg-gray-700" : "bg-gray-100"
                 }`}
               >
-                <span>{invite}</span>
-                <button onClick={() => handleRemoveInvite(index)} className="text-red-500 hover:text-red-700">
+                <div className="flex items-center space-x-3">
+                  {invitedUser.picture ? (
+                    <img
+                      src={invitedUser.picture}
+                      alt={invitedUser.name}
+                      className="w-8 h-8 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                      isDarkTheme ? 'bg-gray-600' : 'bg-gray-300'
+                    }`}>
+                      <span className="text-sm font-medium">
+                        {invitedUser.name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <p className="font-medium">{invitedUser.name}</p>
+                    <div className="flex items-center space-x-2">
+                      <p className={`text-xs ${isDarkTheme ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {invitedUser.email}
+                      </p>
+                      {invitedUser.isOnline && (
+                        <span className="text-xs text-green-500 flex items-center">
+                          <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
+                          Online
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => handleRemoveInvite(invitedUser._id)} 
+                  className="text-red-500 hover:text-red-700 text-sm"
+                >
                   Remove
                 </button>
               </div>

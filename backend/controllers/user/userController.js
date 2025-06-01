@@ -71,3 +71,31 @@ exports.updateOnlineStatus = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
+exports.searchUsers = async (req, res) => {
+  try {
+    const { query, limit = 10 } = req.query;
+    const currentUserId = req.user._id;
+    
+    if (!query || query.trim().length < 2) {
+      return res.json({ users: [] });
+    }
+    
+    // Search users by name or email (case-insensitive)
+    // Exclude current user from results
+    const users = await User.find({
+      _id: { $ne: currentUserId },
+      $or: [
+        { name: { $regex: query.trim(), $options: 'i' } },
+        { email: { $regex: query.trim(), $options: 'i' } }
+      ]
+    })
+    .select('_id name email picture isOnline lastActive')
+    .limit(parseInt(limit))
+    .sort({ isOnline: -1, name: 1 }); // Online users first, then alphabetical
+    
+    res.json({ users });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};

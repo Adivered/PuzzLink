@@ -1,0 +1,270 @@
+================================================================================
+                          PUZZLINK APPLICATION ARCHITECTURE
+                              & AI AGENT CONTEXT GUIDE
+================================================================================
+
+OVERVIEW
+--------
+Puzzlink is a real-time collaborative puzzle and whiteboard game platform with 
+integrated chat system. Users can create rooms, invite players, solve puzzles 
+together, and communicate in real-time.
+
+================================================================================
+SOCKET ARCHITECTURE HIERARCHY
+================================================================================
+
+CONNECTION FLOW
+---------------
+User Authentication → Socket Connection → Personal Room Join → Auto-join Home Room → Game Room Management
+
+SOCKET ROOM STRUCTURE
+--------------------
+├── user_{userId} (Personal notifications & invitations)
+├── room_{homeRoomId} (Global "Home" chat - all users)
+├── room_{gameRoomId} (Game-specific rooms for collaboration)
+└── puzzle_{puzzleId} (Puzzle-specific real-time updates)
+
+SOCKET EVENT FLOW
+----------------
+• Initial Connection: join_user → initial_data → Auto-join Home room
+• Room Switching: switch_room → Leave old room → Join new room → room_data_update + messages_update
+• Real-time Updates: message → user_online/offline → player_joined/left → piece_moved
+
+================================================================================
+REDUX STORE ARCHITECTURE
+================================================================================
+
+SLICE HIERARCHY & RESPONSIBILITIES
+----------------------------------
+store/
+├── authSlice.js (User authentication & profile)
+├── socketSlice.js (Socket connection management & events)
+├── chatSlice.js (Messages, conversations, room chat data)
+├── roomSlice.js (Room management, players, game state)
+├── gameSlice.js (Game lifecycle, puzzle/whiteboard data)
+└── puzzleSlice.js (Puzzle pieces, completion state, moves)
+
+DATA FLOW PATTERNS
+------------------
+1. Socket Events → useSocketEventHandlers → Dispatch Actions → Update State
+2. User Actions → Async Thunks → Socket Emits → Real-time Updates
+3. Centralized Room Switching: switchToRoom action manages all room transitions
+
+SHARED INSTANCE MANAGEMENT
+-------------------------
+• Single Socket Connection: Shared across all components via socketSlice
+• Centralized Chat Data: All messages/conversations managed in chatSlice
+• Room State Synchronization: roomSlice + socket events keep all clients in sync
+• No Component-Level Socket Management: All socket logic centralized in hooks
+
+================================================================================
+CORE FEATURES & SAFE PROGRAMMING
+================================================================================
+
+PUZZLE GAME SYSTEM
+------------------
+• Real-time Piece Movement: Immediate local updates + socket broadcasts
+• Collision Detection: Prevents overlapping pieces
+• Completion Validation: Server-side verification of puzzle completion
+• State Synchronization: All players see same board state in real-time
+
+WHITEBOARD COLLABORATION
+------------------------
+• Shared Canvas: Real-time drawing synchronization
+• Multi-user Support: Multiple users can draw simultaneously
+• Persistent State: Drawings saved and restored on room join
+
+CHAT SYSTEM ARCHITECTURE
+------------------------
+• Three Chat Interfaces: ConversationList, Conversation View, FloatingChat
+• Unified Data Source: All chat components use same Redux state
+• Real-time Messaging: Instant message delivery via sockets
+• Message Persistence: All messages stored in database + cached in Redux
+
+ROOM & PLAYER MANAGEMENT
+-----------------------
+• Dynamic Room Creation: Users can create custom game rooms
+• Invitation System: Real-time invitations via personal socket rooms
+• Player State Tracking: Online/offline status, room membership
+• Auto-cleanup: Disconnected users automatically removed
+
+================================================================================
+SAFE PROGRAMMING PRACTICES
+================================================================================
+
+ERROR HANDLING PATTERNS
+-----------------------
+• Graceful Socket Disconnections: Automatic reconnection handling
+• Null Safety: Extensive null checks for user data, room data, socket connections
+• State Validation: Server-side validation of all game state changes
+• Fallback Mechanisms: UI gracefully handles missing data
+
+MEMORY MANAGEMENT
+----------------
+• Stale Connection Cleanup: Background process removes inactive socket connections
+• State Cleanup: Proper cleanup when users leave rooms/disconnect
+• Event Listener Management: Proper socket event registration/deregistration
+
+DATA CONSISTENCY
+---------------
+• Single Source of Truth: Redux store as centralized state management
+• Optimistic Updates: Local updates with server confirmation
+• Conflict Resolution: Server state takes precedence over client state
+• Real-time Synchronization: All state changes broadcast to relevant users
+
+================================================================================
+AI INTEGRATION CONTEXT
+================================================================================
+
+CURRENT AI FEATURES
+------------------
+• Image Generation: AI-generated puzzle images via prompts
+• Content Moderation: Potential for AI-based chat moderation
+• Smart Puzzle Generation: AI could generate puzzle pieces from images
+
+ARCHITECTURE READY FOR AI
+-------------------------
+• Extensible Game Modes: Easy to add AI-powered game features
+• Real-time Communication: Perfect for AI assistant integration
+• User Behavior Tracking: Data available for AI learning/recommendations
+• Modular Design: AI features can be added without disrupting core architecture
+
+================================================================================
+DEVELOPMENT PATTERNS
+================================================================================
+
+STATE MANAGEMENT
+---------------
+• Centralized Actions: All major actions go through Redux thunks
+• Socket Event Handlers: Separated into dedicated hook (useSocketEventHandlers)
+• Component Isolation: Components only dispatch actions, don't handle socket directly
+• Async Operation Handling: Proper loading states and error handling
+
+REAL-TIME UPDATES
+----------------
+• Bidirectional Sync: Client → Socket → Server → Socket → All Clients
+• Event-Driven Architecture: All state changes trigger appropriate socket events
+• Optimistic UI: Immediate local updates with server confirmation
+• Conflict Resolution: Server state always authoritative
+
+CODE ORGANIZATION
+----------------
+• Hooks for Logic: Business logic abstracted into custom hooks
+• Components for UI: Pure UI components with minimal logic
+• Centralized Socket Management: Single socket instance shared via Redux
+• Modular Architecture: Easy to extend with new game modes/features
+
+================================================================================
+COMMON ISSUES & DEBUGGING
+================================================================================
+
+COMPILATION ERRORS
+-----------------
+• Duplicate Exports: createAsyncThunk automatically exports actions, don't manually export them
+• Import Conflicts: Use aliases when importing actions with same names from different slices
+
+SOCKET CONNECTION ISSUES
+-----------------------
+• Connection Tracking: Use userConnections Map to track active socket connections
+• Null Checks: Always check if userConnections.get(userId) exists before accessing .size
+• Room Cleanup: Ensure users are properly removed from socket rooms on disconnect
+
+REAL-TIME SYNC ISSUES
+--------------------
+• Message Delivery: Check if users are in correct socket rooms
+• State Updates: Verify socket events are dispatching correct Redux actions
+• Race Conditions: Use server-side validation for authoritative state
+
+================================================================================
+FILE STRUCTURE REFERENCE
+================================================================================
+
+FRONTEND KEY FILES
+-----------------
+frontend/src/
+├── hooks/
+│   ├── useSocket.js (Socket connection management)
+│   ├── useSocketEventHandlers.js (Socket event handling)
+│   └── useRoomChat.js (Room chat functionality)
+├── store/
+│   ├── authSlice.js
+│   ├── socketSlice.js
+│   ├── chatSlice.js
+│   ├── roomSlice.js
+│   ├── gameSlice.js
+│   └── puzzleSlice.js
+├── components/
+│   ├── Chat/ (ConversationList, MessageList, FloatingChat)
+│   ├── game/ (PuzzleGame, PuzzlePiece, DroppableCell)
+│   └── Room/ (RoomLobby, CreateRoom)
+└── pages/
+    ├── Home/
+    └── Game/
+
+BACKEND KEY FILES
+----------------
+backend/
+├── sockets/
+│   ├── userHandler.js (User connections, room management)
+│   ├── chatHandler.js (Message handling)
+│   ├── roomHandler.js (Room events)
+│   └── puzzleHandler.js (Puzzle game logic)
+├── models/
+│   ├── User.js
+│   ├── Room.js
+│   ├── Conversation.js
+│   └── Message.js
+└── controllers/
+    ├── auth/
+    ├── room/
+    └── chat/
+
+================================================================================
+DEVELOPMENT COMMANDS
+================================================================================
+
+Starting the Application:
+cd frontend && npm run start
+
+This runs both frontend and backend concurrently:
+- Frontend: React development server on port 3000
+- Backend: Node.js server on port 5000
+
+Database: MongoDB Atlas cluster
+
+================================================================================
+KEY ARCHITECTURAL DECISIONS
+================================================================================
+
+1. CENTRALIZED SOCKET MANAGEMENT
+   - Single socket instance shared via Redux
+   - All socket events handled in useSocketEventHandlers hook
+   - Components never directly interact with socket
+
+2. ROOM-BASED ARCHITECTURE
+   - Every user auto-joins "Home" room for global chat
+   - Game rooms are separate socket rooms for collaboration
+   - Personal rooms for notifications and invitations
+
+3. OPTIMISTIC UI UPDATES
+   - Immediate local updates for better UX
+   - Server confirmation ensures data consistency
+   - Conflict resolution prioritizes server state
+
+4. MODULAR GAME SYSTEM
+   - Game modes (Puzzle, Whiteboard) are pluggable
+   - Shared room infrastructure supports any real-time game
+   - Easy to add new game types without breaking existing functionality
+
+================================================================================
+USE THIS GUIDE WHEN:
+================================================================================
+
+• Working on Puzzlink to understand complete architecture
+• Maintaining consistency with established patterns
+• Implementing new features that align with real-time collaborative design
+• Debugging socket connection or state synchronization issues
+• Adding AI features that integrate with existing architecture
+• Understanding the relationship between sockets, Redux, and React components
+
+================================================================================ 

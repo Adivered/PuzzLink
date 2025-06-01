@@ -11,6 +11,7 @@ const Navbar = ({ user, onThemeToggle }) => {
 
   const theme = useSelector((state) => state.theme.current);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
   const drawerRef = useRef(null);
 
   const isAdmin = user?.role === 'admin';
@@ -18,6 +19,17 @@ const Navbar = ({ user, onThemeToggle }) => {
   const handleLogout = () => {
     dispatch(logoutUser());
   };
+
+  // Handle scroll detection
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollTop = window.scrollY;
+      setIsScrolled(scrollTop > 50);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   useEffect(() => {
     if (drawerRef.current) {
@@ -39,7 +51,10 @@ const Navbar = ({ user, onThemeToggle }) => {
 
   return (
     <>
-      <nav className={`h-[7dvh] sm:h-[8dvh] md:h-[9dvh] lg:h-[10dvh] fixed top-0 left-0 right-0 px-6 pt-2 md:pt-3 lg:pt-4  shadow-md z-50 ${theme === 'dark' ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900'
+      <nav className={`h-[7dvh] sm:h-[8dvh] md:h-[9dvh] lg:h-[10dvh] fixed top-0 left-0 right-0 px-6 pt-2 md:pt-3 lg:pt-4 shadow-md z-50 transition-all duration-300 ${
+        isScrolled 
+          ? `backdrop-blur-md ${theme === 'dark' ? 'bg-gray-900/80 border-b border-gray-700/50' : 'bg-white/80 border-b border-gray-200/50'}`
+          : `${theme === 'dark' ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900'}`
         }`}>
         <div className="container mx-auto flex justify-between items-center">
           <AnimatedLogo />

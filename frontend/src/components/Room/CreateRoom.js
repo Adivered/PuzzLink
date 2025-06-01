@@ -1,16 +1,19 @@
 import { useState, useRef } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { createRoom } from "../../store/roomSlice";
+import { addToast } from "../../store/toastSlice";
 import { useNavigate } from "react-router-dom";
 import GameTypeStation from "./stations/GameTypeStation";
 import RoomConfigStation from "./stations/RoomConfigStation";
 import ImageStation from "./stations/ImageStation";
 import StationIndicator from "./stations/StationIndicator";
 
+
 const CreateRoom = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const theme = useSelector((state) => state.theme.current);
+
   const [currentStation, setCurrentStation] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const stationsRef = useRef(null);
@@ -58,10 +61,28 @@ const CreateRoom = () => {
     setIsSubmitting(true);
 
     try {
+      // Create room with invited users - invitations are now sent automatically during room creation
       const result = await dispatch(createRoom(roomData)).unwrap();
+
+      // Show success toast
+      const inviteCount = roomData.invites.length;
+      let message = `Room "${result.name}" created successfully!`;
+      if (inviteCount > 0) {
+        message += ` Invitations sent to ${inviteCount} user${inviteCount > 1 ? 's' : ''}.`;
+      }
+      
+      dispatch(addToast({
+        message,
+        type: 'success'
+      }));
+
       navigate(`/rooms/${result._id}`);
     } catch (error) {
       console.error("Failed to create room:", error);
+      dispatch(addToast({
+        message: 'Failed to create room. Please try again.',
+        type: 'error'
+      }));
       setIsSubmitting(false);
     }
   };
@@ -74,13 +95,15 @@ const CreateRoom = () => {
 
   return (
     <div
-      className={`max-w-4xl mx-auto p-4 sm:p-6 rounded-xl shadow-lg transition-colors duration-300 ${
-        isDarkTheme ? "bg-gray-800 text-white" : "bg-white text-gray-800"
+      className={`w-full mx-auto p-6 sm:p-8 lg:p-10 rounded-2xl shadow-xl transition-all duration-300 ${
+        isDarkTheme 
+          ? "bg-gray-800/90 backdrop-blur-sm border border-gray-700/50 text-white" 
+          : "bg-white/90 backdrop-blur-sm border border-gray-200/50 text-gray-800 shadow-2xl"
       }`}
     >
       <StationIndicator currentStation={currentStation} isDarkTheme={isDarkTheme} roomData={roomData} />
 
-      <div ref={stationsRef} className="relative min-h-[500px]">
+      <div ref={stationsRef} className="relative min-h-[400px] sm:min-h-[450px] lg:min-h-[500px]">
         <GameTypeStation
           roomData={roomData}
           updateRoomData={updateRoomData}
@@ -101,12 +124,16 @@ const CreateRoom = () => {
         />
       </div>
 
-      <div className={`flex ${currentStation > 0 ? "justify-between" : "justify-end"} mt-8`}>
+      <div className={`flex ${currentStation > 0 ? "justify-between" : "justify-end"} mt-8 pt-6 border-t ${
+        isDarkTheme ? 'border-gray-700/50' : 'border-gray-200/50'
+      }`}>
         {currentStation > 0 && (
           <button
             onClick={handlePrevious}
-            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-              isDarkTheme ? "bg-gray-700 hover:bg-gray-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-800"
+            className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 hover:scale-105 ${
+              isDarkTheme 
+                ? "bg-gray-700/80 hover:bg-gray-600 text-white shadow-lg" 
+                : "bg-gray-100 hover:bg-gray-200 text-gray-800 shadow-md"
             }`}
           >
             Previous
@@ -115,8 +142,10 @@ const CreateRoom = () => {
         {currentStation < 2 && !(currentStation === 1 && roomData.gameMode === 'Drawable') ? (
           <button
             onClick={handleNext}
-            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-              !canProceedToNext() ? "opacity-50 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600 text-white"
+            className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 hover:scale-105 shadow-lg ${
+              !canProceedToNext() 
+                ? "opacity-50 cursor-not-allowed bg-gray-400 text-gray-600" 
+                : "bg-blue-500 hover:bg-blue-600 text-white hover:shadow-blue-500/25"
             }`}
             disabled={!canProceedToNext()}
           >
@@ -125,8 +154,10 @@ const CreateRoom = () => {
         ) : (
           <button
             onClick={handleCreateRoom}
-            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-              isSubmitting ? "opacity-50 cursor-not-allowed" : "bg-green-500 hover:bg-green-600 text-white"
+            className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 hover:scale-105 shadow-lg ${
+              isSubmitting 
+                ? "opacity-50 cursor-not-allowed bg-gray-400 text-gray-600" 
+                : "bg-green-500 hover:bg-green-600 text-white hover:shadow-green-500/25"
             }`}
             disabled={isSubmitting}
           >
