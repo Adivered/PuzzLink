@@ -10,7 +10,7 @@ exports.createRoom = async (req, res) => {
     // console.log("Headers:", req.headers);
     console.log("Body:", req.body);
     console.log("Files:", req.files || req.file);
-    const { roomName, players,gameMode, timeLimit, turnBased } = req.body;
+    const { roomName, players, gameMode, timeLimit, turnBased } = req.body;
     let imagePath = null;
     
     // Only process image for non-whiteboard games
@@ -18,25 +18,92 @@ exports.createRoom = async (req, res) => {
       imagePath = encodeURI(`/uploads/${req.file.filename}`); // Encode the image path
     }
     
-    //const roomOptions = new RoomOptions({ timeLimit });
+    // Parse players from JSON string and extract user IDs for invitations
+    let invitedPlayerIds = [];
+    if (players) {
+      try {
+        const parsedPlayers = JSON.parse(players);
+        invitedPlayerIds = parsedPlayers.map(player => player._id);
+        console.log("Parsed invited player IDs:", invitedPlayerIds);
+      } catch (error) {
+        console.error("Error parsing players JSON:", error);
+        return res.status(400).json({ message: 'Invalid players data format' });
+      }
+    }
+    
+    // Create room with only the creator as a player initially
+    // Invited users will be added when they accept the invitation
     let room = new Room({
       name: roomName,
       creator: req.user._id,
-      players: players ? [req.user._id, ...players] : [req.user._id],
+      players: [req.user._id], // Only creator initially
       timeLimit,
       gameMode: gameMode.toLowerCase(),
       turnBased: gameMode.toLowerCase() === 'drawable' ? false : turnBased, // Force turnBased to false for whiteboard
       image: imagePath,
       status: 'waiting',
+      pendingInvitations: invitedPlayerIds, // Store pending invitations
     });
     room = await room.save();
-    await Promise.all(room.players?.map(player => {
-      console.log("Player: ", player)
-      return User.findByIdAndUpdate(player, {
-        currentRoom: room._id,
-      });
-    }));
+    
+    // Update current room for the creator only
+    await User.findByIdAndUpdate(req.user._id, {
+      currentRoom: room._id,
+    });
+    console.log("Updating creator room: ", req.user._id);
+    
+    // Send invitations to invited players
+    const io = req.app.get('io');
+    
+    // Ensure the creator joins the room socket for real-time updates
+    if (io) {
+      // Find the creator's socket and join them to the room
+      const creatorRoom = `user_${req.user._id}`;
+      const creatorSockets = io.sockets.adapter.rooms.get(creatorRoom);
+      
+      if (creatorSockets && creatorSockets.size > 0) {
+        // Get the first socket for this user and join them to the room
+        const socketId = Array.from(creatorSockets)[0];
+        const creatorSocket = io.sockets.sockets.get(socketId);
+        
+        if (creatorSocket) {
+          creatorSocket.join(`room_${room._id}`);
+          console.log(`🏠 Room creator ${req.user._id} joined room socket: room_${room._id}`);
+          
+          // Verify they're in the room socket
+          const roomSocketName = `room_${room._id}`;
+          const socketsInRoom = io.sockets.adapter.rooms.get(roomSocketName);
+          console.log(`   - Sockets in room socket after creator join: ${socketsInRoom ? socketsInRoom.size : 0}`);
+        }
+      } else {
+        console.log(`⚠️ Room creator ${req.user._id} not found in personal socket room`);
+      }
+    }
+    if (io && invitedPlayerIds.length > 0) {
+      for (const playerId of invitedPlayerIds) {
+        // Check if recipient is connected to their personal room
+        const recipientRoom = `user_${playerId}`;
+        const recipientSockets = io.sockets.adapter.rooms.get(recipientRoom);
+        
+        console.log(`🔍 Sending invitation to ${playerId}:`);
+        console.log(`   - Personal room: ${recipientRoom}`);
+        console.log(`   - Connected sockets: ${recipientSockets ? recipientSockets.size : 0}`);
+        
+        // Send invitation regardless of connection status
+        // If user is offline, they'll get it when they come online
+        io.to(recipientRoom).emit('room_invitation', {
+          roomId: room._id,
+          inviterName: req.user.name,
+          timestamp: new Date()
+        });
+        
+        console.log(`Room invitation sent to user ${playerId} for room ${room._id}`);
+      }
+    }
+    
+    // Populate and return the room
     room = await Room.findById(room._id)
+      .populate('creator', 'name picture isOnline lastActive')
       .populate('players', 'name picture currentRoom isOnline lastActive');
 
     res.status(201).json(room);
@@ -174,18 +241,163 @@ exports.getRoom = async (req, res) => {
   try {
     const { roomId } = req.params;
     const room = await Room.findById(roomId)
+      .populate('creator', 'name picture isOnline lastActive')
       .populate('players', 'name picture currentRoom isOnline lastActive')
+      .populate('pendingInvitations', 'name picture isOnline lastActive')
       .populate('currentGame', 'gameMode gameImages players');
     if (!room) {
       return res.status(404).json({ message: 'Room not found' });
     }
+    
+    // Check if the user is a member of the room or has a pending invitation
+    const isRoomMember = room.players.some(player => player._id.toString() === req.user._id.toString());
+    const hasPendingInvitation = room.pendingInvitations.some(user => user._id.toString() === req.user._id.toString());
+    
+    if (!isRoomMember && !hasPendingInvitation) {
+      return res.status(403).json({ message: 'You are not a member of this room' });
+    }
+    
     res.json(room);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
+exports.removePlayer = async (req, res) => {
+  try {
+    const { roomId, playerId } = req.params;
+    
+    // Find the room
+    const room = await Room.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+    
+    // Check if the requester is the room creator
+    if (room.creator.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the room creator can remove players' });
+    }
+    
+    // Check if the player is in the room (handle both populated and non-populated players)
+    const playerInRoom = room.players.some(player => {
+      const playerIdToCheck = player._id ? player._id.toString() : player.toString();
+      return playerIdToCheck === playerId;
+    });
+    
+    if (!playerInRoom) {
+      console.log('Player not found in room. Room players:', room.players.map(p => p._id || p));
+      console.log('Trying to remove player:', playerId);
+      return res.status(400).json({ message: 'Player is not in this room' });
+    }
+    
+    // Don't allow removing the creator
+    if (room.creator.toString() === playerId) {
+      return res.status(400).json({ message: 'Cannot remove the room creator' });
+    }
+    
+    // Get player info before removing
+    const playerToRemove = await User.findById(playerId);
+    
+    // Remove player from room
+    const updatedRoom = await Room.findByIdAndUpdate(
+      roomId,
+      { $pull: { players: playerId } },
+      { new: true }
+    ).populate('players', 'name picture currentRoom isOnline lastActive');
+    
+    // Update the removed player's current room to null or Home room
+    const homeRoom = await Room.findOne({ name: "Home" });
+    await User.findByIdAndUpdate(playerId, {
+      currentRoom: homeRoom?._id || null
+    });
+    
+    // Notify all room members about the player removal via socket
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`room_${roomId}`).emit('player_removed', {
+        roomId,
+        playerId,
+        playerName: playerToRemove?.name,
+        removedBy: req.user.name,
+        players: updatedRoom.players
+      });
+    }
+    
+    console.log(`Player ${playerId} (${playerToRemove?.name}) removed from room ${roomId} by ${req.user.name}`);
+    res.json(updatedRoom);
+  } catch (error) {
+    console.error('Error removing player:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
 
+
+
+// Invite users to an existing room
+exports.inviteToRoom = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { userIds } = req.body;
+    
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'userIds array is required' });
+    }
+    
+    // Find the room
+    const room = await Room.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+    
+    // Check if the requester is the room creator
+    if (room.creator.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the room creator can invite players' });
+    }
+    
+    // Filter out users who are already in the room or have pending invitations
+    const newInvitations = userIds.filter(userId => 
+      !room.players.includes(userId) && !room.pendingInvitations.includes(userId)
+    );
+    
+    if (newInvitations.length === 0) {
+      return res.status(400).json({ message: 'All specified users are already in the room or have pending invitations' });
+    }
+    
+    // Add to pending invitations
+    await Room.findByIdAndUpdate(roomId, {
+      $addToSet: { pendingInvitations: { $each: newInvitations } }
+    });
+    
+    // Send invitations via socket
+    const io = req.app.get('io');
+    if (io) {
+      for (const userId of newInvitations) {
+        const recipientRoom = `user_${userId}`;
+        const recipientSockets = io.sockets.adapter.rooms.get(recipientRoom);
+        
+        console.log(`🔍 Sending invitation to ${userId}:`);
+        console.log(`   - Connected sockets: ${recipientSockets ? recipientSockets.size : 0}`);
+        
+        // Send invitation (will be received if user is online, stored for later if offline)
+        io.to(recipientRoom).emit('room_invitation', {
+          roomId: room._id,
+          inviterName: req.user.name,
+          timestamp: new Date()
+        });
+        
+        console.log(`Room invitation sent to user ${userId} for room ${room._id}`);
+      }
+    }
+    
+    res.json({
+      message: `Invitations sent to ${newInvitations.length} users`,
+      invitedUsers: newInvitations
+    });
+  } catch (error) {
+    console.error('Error inviting users to room:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
 
 const generatePuzzlePieces = (imageWidth, imageHeight, rows, cols) => {
   const pieces = [];
@@ -199,10 +411,7 @@ const generatePuzzlePieces = (imageWidth, imageHeight, rows, cols) => {
           row,
           col,
         },
-        currentPosition: {
-          row,
-          col,
-        },
+        currentPosition: null, // Pieces start in the bank
         imageData: JSON.stringify({
           x: col * pieceWidth,
           y: row * pieceHeight,
@@ -221,4 +430,77 @@ const generatePuzzlePieces = (imageWidth, imageHeight, rows, cols) => {
   }
 
   return pieces;
+};
+
+// Update room settings (only by creator)
+exports.updateRoom = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { timeLimit, gameMode, turnBased, name } = req.body;
+    
+    // Find the room
+    const room = await Room.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+    
+    // Check if the requester is the room creator
+    if (room.creator.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the room creator can edit room settings' });
+    }
+    
+    // Can't update if game is in progress
+    if (room.status === 'inProgress') {
+      return res.status(400).json({ message: 'Cannot update room settings while game is in progress' });
+    }
+    
+    // Update allowed fields
+    const updateData = {};
+    if (timeLimit !== undefined) updateData.timeLimit = timeLimit;
+    if (gameMode !== undefined) updateData.gameMode = gameMode.toLowerCase();
+    if (turnBased !== undefined) updateData.turnBased = turnBased;
+    if (name !== undefined) updateData.name = name;
+    
+    const updatedRoom = await Room.findByIdAndUpdate(
+      roomId,
+      updateData,
+      { new: true }
+    ).populate('creator', 'name picture isOnline lastActive')
+     .populate('players', 'name picture currentRoom isOnline lastActive')
+     .populate('pendingInvitations', 'name picture isOnline lastActive');
+    
+    // Notify all room members about the room update via socket
+    const io = req.app.get('io');
+    if (io) {
+      const roomUpdateData = {
+        roomId,
+        roomData: {
+          _id: updatedRoom._id,
+          name: updatedRoom.name,
+          creator: updatedRoom.creator,
+          players: updatedRoom.players,
+          pendingInvitations: updatedRoom.pendingInvitations,
+          timeLimit: updatedRoom.timeLimit,
+          gameMode: updatedRoom.gameMode,
+          turnBased: updatedRoom.turnBased,
+          status: updatedRoom.status,
+          currentGame: updatedRoom.currentGame
+        },
+        updatedBy: req.user.name
+      };
+      
+      io.to(`room_${roomId}`).emit('room_data_update', roomUpdateData);
+      io.to(`room_${roomId}`).emit('room_settings_updated', {
+        roomId,
+        settings: updateData,
+        updatedBy: req.user.name
+      });
+    }
+    
+    console.log(`Room ${roomId} settings updated by ${req.user.name}:`, updateData);
+    res.json(updatedRoom);
+  } catch (error) {
+    console.error('Error updating room settings:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
 };

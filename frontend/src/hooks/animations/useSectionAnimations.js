@@ -1,73 +1,106 @@
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { fadeOut, fadeInUp, fadeInScale } from '../../utils/animations';
+import { fadeInUp, fadeInScale } from '../../utils/animations';
 import useIsomorphicLayoutEffect from '../useIsomorphicLayoutEffect';
 gsap.registerPlugin(ScrollTrigger);
 
 const useSectionAnimations = () => {
   useIsomorphicLayoutEffect(() => {
-    // Hero Animation
-    const heroTl = gsap.timeline({ repeat: -1 });
-    heroTl.to('#heroSvg', { opacity: 0.6, duration: 60 });
-
-    // Features Animation
-    ScrollTrigger.batch('.feature', {
-      start: 'top center',
-      onEnter: (elements) => {fadeInUp(elements)},
-      onEnterBack: (elements) => fadeInUp(elements),
-      onLeave: (elements) => fadeOut(elements),
-      onLeaveBack: (elements) => fadeOut(elements),
-      once: false
+    // Optimize scroll trigger settings for better performance
+    ScrollTrigger.defaults({
+      start: 'top 90%',
+      end: 'bottom 10%',
+      toggleActions: 'play none none reverse',
+      // Add performance optimizations
+      refreshPriority: -1,
+      fastScrollEnd: true
     });
 
-    // Testimonials Animation
-    ScrollTrigger.batch('.testimonial', {
-      start: 'top center',
-      onEnter: (elements) => fadeInScale(elements),
-      onEnterBack: (elements) => fadeInScale(elements),
-      onLeave: (elements) => fadeOut(elements),
-      onLeaveBack: (elements) => fadeOut(elements),
-      once: false
+    // Batch animations for better performance
+    const animationBatches = [
+      {
+        selector: '[data-animate="feature"]',
+        animation: (elements) => fadeInUp(elements, { stagger: 0.1, duration: 0.6 })
+      },
+      {
+        selector: '[data-animate="testimonial"]',
+        animation: (elements) => fadeInScale(elements, { stagger: 0.15, duration: 0.5 })
+      },
+      {
+        selector: '[data-animate="pricing"]',
+        animation: (elements) => {
+          gsap.fromTo(elements, 
+            { opacity: 0, y: 30, scale: 0.95 },
+            { 
+              opacity: 1, 
+              y: 0, 
+              scale: 1, 
+              duration: 0.6, 
+              stagger: 0.1,
+              ease: "power2.out"
+            }
+          );
+        }
+      },
+      {
+        selector: '[data-animate="faq"]',
+        animation: (elements) => {
+          gsap.fromTo(elements,
+            { opacity: 0, x: -20 },
+            { 
+              opacity: 1, 
+              x: 0, 
+              duration: 0.5, 
+              stagger: 0.08,
+              ease: "power2.out"
+            }
+          );
+        }
+      },
+      {
+        selector: '[data-animate="cta"]',
+        animation: (elements) => {
+          gsap.fromTo(elements,
+            { opacity: 0, y: 20 },
+            { 
+              opacity: 1, 
+              y: 0, 
+              duration: 0.6,
+              stagger: 0.08,
+              ease: "power2.out"
+            }
+          );
+        }
+      },
+      {
+        selector: '[data-animate="section-header"]',
+        animation: (elements) => {
+          elements.forEach(element => {
+            gsap.fromTo(element,
+              { opacity: 0, y: 20 },
+              { 
+                opacity: 1, 
+                y: 0, 
+                duration: 0.6,
+                ease: "power2.out"
+              }
+            );
+          });
+        }
+      }
+    ];
+
+    // Create scroll triggers for each batch
+    animationBatches.forEach(({ selector, animation }) => {
+      ScrollTrigger.batch(selector, {
+        onEnter: animation,
+        once: true,
+        // Add performance optimizations
+        refreshPriority: -1
+      });
     });
 
-    // Pricing Animation
-    ScrollTrigger.batch('.price-card', {
-      start: 'top center',
-      onEnter: (elements) => fadeInUp(elements),
-      onEnterBack: (elements) => fadeInUp(elements),
-      onLeave: (elements) => fadeOut(elements),
-      onLeaveBack: (elements) => fadeOut(elements),
-      once: false
-    });
-
-    // FAQ Animation
-    ScrollTrigger.batch('.faq-item', {
-      start: 'top center',
-      onEnter: (elements) => fadeInUp(elements, { stagger: 0.2, duration: 0.6 }),
-      onEnterBack: (elements) => fadeInUp(elements, { stagger: 0.2, duration: 0.6 }),
-      onLeave: (elements) => fadeOut(elements),
-      onLeaveBack: (elements) => fadeOut(elements),
-      once: false
-    });
-
-    ScrollTrigger.batch('.cta', {
-      start: 'top center',
-      onEnter: (elements) => fadeInUp(elements, { duration: 0.6 }),
-      onEnterBack: (elements) => fadeInUp(elements, { duration: 0.6 }),
-      onLeave: (elements) => fadeOut(elements),
-      onLeaveBack: (elements) => fadeOut(elements),
-      once: false
-    });
-
-    ScrollTrigger.batch('#ctaButton', {
-      start: 'top center',
-      onEnter: (elements) => fadeInScale(elements, { duration: 0.6 }),
-      onEnterBack: (elements) => fadeInScale(elements, { duration: 0.6 }),
-      onLeave: (elements) => fadeOut(elements),
-      onLeaveBack: (elements) => fadeOut(elements),
-      once: false
-    });
-
+    // Cleanup function
     return () => {
       ScrollTrigger.getAll().forEach(trigger => trigger.kill());
     };

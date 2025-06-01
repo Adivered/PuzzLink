@@ -22,10 +22,6 @@ export const SOCKET_EVENTS = {
   NEW_MESSAGE: 'new_message',
   MESSAGE_SENT: 'message_sent',
   MESSAGE_ERROR: 'message_error',
-  TYPING_START: 'typing_start',
-  TYPING_STOP: 'typing_stop',
-  USER_TYPING: 'user_typing',
-  USER_STOP_TYPING: 'user_stop_typing',
   MARK_MESSAGES_READ: 'mark_messages_read',
   MESSAGE_READ: 'message_read',
   ADD_REACTION: 'add_reaction',
@@ -62,13 +58,33 @@ export const SOCKET_EVENTS = {
   GAME_COMPLETED: 'game_completed',
   CURSOR_POSITION: 'cursor_position',
   PLAYER_CURSOR: 'player_cursor',
-  TURN_STARTED: 'turn_started',
-  TURN_ENDED: 'turn_ended',
-  GAME_PAUSED: 'game_paused',
-  GAME_RESUMED: 'game_resumed',
-  JOIN_AS_SPECTATOR: 'join_as_spectator',
-  REQUEST_GAME_STATE: 'request_game_state',
-  GAME_STATE_SYNC: 'game_state_sync',
+
+  // Whiteboard events
+  WHITEBOARD_JOIN: 'whiteboard_join',
+  WHITEBOARD_LEAVE: 'whiteboard_leave',
+  WHITEBOARD_DRAW_START: 'whiteboard_draw_start',
+  WHITEBOARD_DRAW_MOVE: 'whiteboard_draw_move',
+  WHITEBOARD_DRAW_END: 'whiteboard_draw_end',
+  WHITEBOARD_STROKE_ADDED: 'whiteboard_stroke_added',
+  WHITEBOARD_CLEAR: 'whiteboard_clear',
+  WHITEBOARD_CLEARED: 'whiteboard_cleared',
+  WHITEBOARD_UNDO: 'whiteboard_undo',
+  WHITEBOARD_USER_CURSOR: 'whiteboard_user_cursor',
+  WHITEBOARD_TOOL_CHANGE: 'whiteboard_tool_change',
+  WHITEBOARD_STROKE_REMOVED: 'whiteboard_stroke_removed',
+  WHITEBOARD_ERROR: 'whiteboard_error',
+
+  // Puzzle events
+  PUZZLE_JOIN: 'puzzle_join',
+  PUZZLE_LEAVE: 'puzzle_leave',
+  PUZZLE_MOVE_PIECE: 'puzzle_move_piece',
+  PUZZLE_PIECE_MOVED: 'puzzle_piece_moved',
+  PUZZLE_STATE_SYNC: 'puzzle_state_sync',
+  PUZZLE_COMPLETED: 'puzzle_completed',
+  PUZZLE_RESET: 'puzzle_reset',
+  PUZZLE_HINT_REQUEST: 'puzzle_hint_request',
+  PUZZLE_HINT_PROVIDED: 'puzzle_hint_provided',
+  PUZZLE_ERROR: 'puzzle_error'
 };
 
 // Room name generators

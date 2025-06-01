@@ -62,10 +62,11 @@ const ImageStation = ({ roomData, updateRoomData, isActive, isDarkTheme }) => {
   };
 
   useEffect(() => {
+    const canvas = canvasRef.current;
     return () => {
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext("2d");
-        ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        ctx?.clearRect(0, 0, canvas.width, canvas.height);
       }
     };
   }, []);

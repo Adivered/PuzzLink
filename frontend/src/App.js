@@ -13,37 +13,26 @@ import TransitionLayout from './components/common/Layout/TransitionLayout';
 import RoomLobby from './components/Room/RoomLobby';
 import GameRoom from './pages/Game/GameRoom';
 import FloatingChat from './components/Chat/FloatingChat';
-import socketService from './services/socketService';
+import SimpleInvitationHandler from './components/common/SimpleInvitationHandler';
+
+import { useDispatch } from 'react-redux';
+import { disconnectSocket } from './store/socketSlice';
 
 const App = () => {
+  const dispatch = useDispatch();
+
   // Global socket cleanup only on actual page unload
   useEffect(() => {
-    console.log('App component mounted - setting up cleanup handlers');
-    
     const handleBeforeUnload = () => {
-      console.log('Page unloading - disconnecting socket');
-      socketService.disconnect();
+      dispatch(disconnectSocket());
     };
 
-    // Only add the beforeunload listener, don't disconnect on component unmount
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // In development, add additional logging
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Development mode - App component initialized');
-      
-      // Log when cleanup function is called (but don't disconnect)
-      return () => {
-        console.log('App component cleanup called (StrictMode or unmount) - NOT disconnecting socket');
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-      };
-    }
-
-    // Production cleanup
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, []);
+  }, [dispatch]);
 
   return (
     <>
@@ -85,6 +74,7 @@ const App = () => {
         </Routes>
         <ToastContainer />
         <FloatingChat />
+        <SimpleInvitationHandler />
       </TransitionLayout>
     </>
   );

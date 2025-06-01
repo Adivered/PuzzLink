@@ -14,7 +14,6 @@ const WhiteboardCanvas = forwardRef(({
   onDrawStart,
   onDrawMove,
   onDrawEnd,
-  onCursorMove,
   isDarkTheme
 }, ref) => {
   const canvasRef = useRef(null);
@@ -41,29 +40,7 @@ const WhiteboardCanvas = forwardRef(({
     canvas.height = height;
   }, [width, height]);
 
-  // Clear and redraw all strokes
-  const redrawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    const context = contextRef.current;
-    if (!canvas || !context) return;
 
-    // Clear canvas
-    context.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Set background
-    context.fillStyle = isDarkTheme ? '#1f2937' : '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Draw all completed strokes
-    strokes.forEach(stroke => {
-      drawStroke(context, stroke);
-    });
-
-    // Draw current stroke if exists
-    if (currentStroke) {
-      drawStroke(context, currentStroke);
-    }
-  }, [strokes, currentStroke, isDarkTheme]);
 
   // Draw a single stroke
   const drawStroke = useCallback((context, stroke) => {
@@ -112,6 +89,32 @@ const WhiteboardCanvas = forwardRef(({
     context.restore();
   }, []);
 
+  // Clear and redraw all strokes
+  const redrawCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const context = contextRef.current;
+    if (!canvas || !context) {
+      return;
+    }
+
+    // Clear canvas
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Set background
+    context.fillStyle = isDarkTheme ? '#1f2937' : '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw all completed strokes
+    strokes.forEach((stroke, index) => {
+      drawStroke(context, stroke);
+    });
+
+    // Draw current stroke if exists
+    if (currentStroke) {
+      drawStroke(context, currentStroke);
+    }
+  }, [strokes, currentStroke, isDarkTheme, drawStroke]);
+
   // Redraw when strokes change
   useEffect(() => {
     redrawCanvas();
@@ -159,14 +162,11 @@ const WhiteboardCanvas = forwardRef(({
     const point = getPointFromEvent(e);
     if (!point) return;
 
-    // Always send cursor position for collaboration
-    onCursorMove({ x: point.x, y: point.y, visible: true });
-
     if (isDrawingRef.current) {
       onDrawMove(point);
       lastPointRef.current = point;
     }
-  }, [getPointFromEvent, onDrawMove, onCursorMove]);
+  }, [getPointFromEvent, onDrawMove]);
 
   const handleEnd = useCallback((e) => {
     e.preventDefault();
@@ -182,18 +182,12 @@ const WhiteboardCanvas = forwardRef(({
     if (isDrawingRef.current) {
       handleEnd(e);
     }
-    // Hide cursor when mouse leaves canvas
-    onCursorMove({ x: 0, y: 0, visible: false });
-  }, [handleEnd, onCursorMove]);
+  }, [handleEnd]);
 
   // Handle mouse enter
   const handleEnter = useCallback((e) => {
-    const point = getPointFromEvent(e);
-    if (point) {
-      // Show cursor when mouse enters canvas
-      onCursorMove({ x: point.x, y: point.y, visible: true });
-    }
-  }, [getPointFromEvent, onCursorMove]);
+    // No cursor handling needed
+  }, []);
 
   // Prevent context menu on right click
   const handleContextMenu = useCallback((e) => {

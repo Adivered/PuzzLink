@@ -1,5 +1,14 @@
 const Message = require('../models/Message');
 const Conversation = require('../models/Conversation');
+const User = require('../models/User');
+
+// Helper function to get user display info for logging
+const getUserDisplayInfo = (socket) => {
+  if (socket.userEmail) {
+    return `${socket.userEmail} <${socket.id.slice(-8)}>`;
+  }
+  return `Socket ${socket.id.slice(-8)} (no user)`;
+};
 
 const chatHandler = (socket, io) => {
   // Join a conversation
@@ -72,11 +81,36 @@ const chatHandler = (socket, io) => {
 
       // Emit to appropriate room/conversation
       if (roomId) {
+        // Check who's in the room before broadcasting
+        const roomSocketName = `room_${roomId}`;
+        const socketsInRoom = io.sockets.adapter.rooms.get(roomSocketName);
+        const socketCount = socketsInRoom ? socketsInRoom.size : 0;
+        
+        // Enhanced logging with user info
+        const userInfo = await getUserDisplayInfo(socket);
+        const roomDisplay = `room: ${roomId.slice(-8)}`;
+        
+        console.log(`📨 Broadcasting message from ${userInfo} to ${roomDisplay}:`);
+        console.log(`   - Message ID: ${message._id}`);
+        console.log(`   - Sockets in room: ${socketCount}`);
+        if (socketCount > 0) {
+          const socketDisplays = Array.from(socketsInRoom).map(id => id.slice(-8)).join(', ');
+          console.log(`   - Socket IDs: ${socketDisplays}`);
+        }
+        
         // Send to all users in the room
-        io.to(`room_${roomId}`).emit('new_message', messageWithTempId);
+        io.to(`room_${roomId}`).emit('message_received', messageWithTempId);
+        
+        if (socketCount === 0) {
+          console.warn(`⚠️ No sockets in room ${roomId.slice(-8)} to receive message!`);
+        }
       } else if (conversationId) {
         // Send to all users in the conversation
-        io.to(`conversation_${conversationId}`).emit('new_message', messageWithTempId);
+        const userInfo = await getUserDisplayInfo(socket);
+        const convDisplay = `conversation: ${conversationId.slice(-8)}`;
+        
+        io.to(`conversation_${conversationId}`).emit('message_received', messageWithTempId);
+        console.log(`📨 Broadcasted message from ${userInfo} to ${convDisplay}: ${message._id}`);
       }
 
       // Send confirmation back to sender
@@ -94,42 +128,6 @@ const chatHandler = (socket, io) => {
         conversationId: messageData.conversationId,
         roomId: messageData.roomId
       });
-    }
-  });
-
-  // Handle typing indicators
-  socket.on('typing_start', ({ conversationId, roomId, userId, userName }) => {
-    try {
-      const targetRoom = roomId ? `room_${roomId}` : `conversation_${conversationId}`;
-      
-      // Broadcast to others in the room/conversation (excluding sender)
-      socket.to(targetRoom).emit('user_typing', {
-        userId,
-        userName,
-        conversationId,
-        roomId
-      });
-      
-      console.log(`User ${userName} started typing in ${roomId ? 'room' : 'conversation'}: ${roomId || conversationId}`);
-    } catch (error) {
-      console.error('Error handling typing start:', error);
-    }
-  });
-
-  socket.on('typing_stop', ({ conversationId, roomId, userId }) => {
-    try {
-      const targetRoom = roomId ? `room_${roomId}` : `conversation_${conversationId}`;
-      
-      // Broadcast to others in the room/conversation (excluding sender)
-      socket.to(targetRoom).emit('user_stop_typing', {
-        userId,
-        conversationId,
-        roomId
-      });
-      
-      console.log(`User ${userId} stopped typing in ${roomId ? 'room' : 'conversation'}: ${roomId || conversationId}`);
-    } catch (error) {
-      console.error('Error handling typing stop:', error);
     }
   });
 

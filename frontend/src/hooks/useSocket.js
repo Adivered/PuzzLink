@@ -1,47 +1,42 @@
 import { useEffect, useRef } from 'react';
-import { useSelector } from 'react-redux';
-import socketService from '../services/socketService';
+import { useDispatch, useSelector } from 'react-redux';
+import { connectSocket, disconnectSocket, emitSocketEvent } from '../store/socketSlice';
+import { setActiveRoom } from '../store/chatSlice';
 
 const useSocket = () => {
-  const { user, isAuthenticated } = useSelector((state) => state.auth);
+  const dispatch = useDispatch();
+  const user = useSelector((state) => state.auth.user);
   const { isConnected, isConnecting } = useSelector((state) => state.socket);
-  const authenticatedUser = useRef(null);
+  const hasConnectedRef = useRef(false);
 
-  // Initialize socket connection when user is authenticated
   useEffect(() => {
-    if (isAuthenticated && !isConnected && !isConnecting) {
-      console.log('🔌 Initiating socket connection for authenticated user');
-      socketService.connect().catch((error) => {
-        console.error('Failed to connect to socket server:', error.message);
-        // Don't attempt immediate retry here - let the socket service handle retries
+    if (user && !isConnected && !isConnecting && !hasConnectedRef.current) {
+      hasConnectedRef.current = true;
+      
+      // 1. Connect to socket
+      dispatch(connectSocket()).then((result) => {
+        if (result.type === 'socket/connect/fulfilled') {
+          // 2. FIRST - Set active room to Home so UI is ready for messages
+          if (user.homeRoomId) {
+            dispatch(setActiveRoom(user.homeRoomId));
+          }
+          
+          // 3. THEN - Join user (this gets initial data including Home messages)
+          emitSocketEvent('join_user', user.id);
+        }
       });
     }
-  }, [isAuthenticated, isConnected, isConnecting]);
 
-  // Handle user authentication when socket is connected
-  useEffect(() => {
-    const currentUserId = user?.id;
-    
-    if (isAuthenticated && currentUserId && isConnected) {
-      // Prevent re-authentication of the same user
-      if (authenticatedUser.current !== currentUserId) {
-        console.log('🔐 Authenticating user via useSocket hook:', currentUserId);
-        socketService.authenticateUser(currentUserId);
-        authenticatedUser.current = currentUserId;
-      }
-    } else if (!isAuthenticated) {
-      // User logged out - reset authentication and disconnect socket
-      authenticatedUser.current = null;
-      console.log('👋 User logged out, clearing socket authentication');
-      if (isConnected) {
-        socketService.disconnect();
-      }
+    // Disconnect when user logs out
+    if (!user && isConnected) {
+      dispatch(disconnectSocket());
+      hasConnectedRef.current = false;
     }
-  }, [isAuthenticated, user?.id, isConnected]);
+  }, [dispatch, user, isConnected, isConnecting]);
 
   return {
     isConnected,
-    user: authenticatedUser.current
+    isConnecting
   };
 };
 

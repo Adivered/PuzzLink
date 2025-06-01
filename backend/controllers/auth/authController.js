@@ -82,10 +82,8 @@ const googleAuth = passport.authenticate("google", {
 });
 
 const googleCallback = (req, res, next) => {
-  console.log("Callbacked")
   passport.authenticate("google", async (err, user, info) => {
     if (err) {
-      // Handle error by redirecting to frontend with error message
       return res.redirect(`${process.env.CLIENT_URL}/login?error=${encodeURIComponent(err.message)}`);
     }
 
@@ -129,27 +127,31 @@ const getCurrentUser = asyncHandler(async (req, res) => {
 });
 
 const checkAuthStatus = asyncHandler(async (req, res) => {
-  let user = null;
-  let homeRoomId = null;
+  // Prevent caching to avoid 304 responses and ensure fresh auth state
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
   
   if (req.user) {
-    // Ensure user is in Home room during auth check
-    const homeRoom = await ensureHomeRoomAndJoinUser(req.user._id);
-    homeRoomId = homeRoom?._id;
+    // Lightweight check - just get home room ID without any updates
+    const homeRoom = await Room.findOne({ name: "Home" }, '_id');
     
-    user = {
-      id: req.user._id,
-      name: req.user.name,
-      email: req.user.email,
-      provider: req.user.provider,
-      homeRoomId
-    };
+    res.json({
+      authenticated: true,
+      user: {
+        id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        provider: req.user.provider,
+        homeRoomId: homeRoom?._id
+      }
+    });
+  } else {
+    res.json({ 
+      authenticated: false, 
+      user: null 
+    });
   }
-  
-  res.json({
-    authenticated: req.isAuthenticated(),
-    user
-  });
 });
 
 const logout = asyncHandler(async (req, res) => {

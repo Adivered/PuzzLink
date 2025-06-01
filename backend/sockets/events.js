@@ -23,10 +23,6 @@ const SOCKET_EVENTS = {
   NEW_MESSAGE: 'new_message',
   MESSAGE_SENT: 'message_sent',
   MESSAGE_ERROR: 'message_error',
-  TYPING_START: 'typing_start',
-  TYPING_STOP: 'typing_stop',
-  USER_TYPING: 'user_typing',
-  USER_STOP_TYPING: 'user_stop_typing',
   MARK_MESSAGES_READ: 'mark_messages_read',
   MESSAGE_READ: 'message_read',
   ADD_REACTION: 'add_reaction',
@@ -71,6 +67,24 @@ const SOCKET_EVENTS = {
   REQUEST_GAME_STATE: 'request_game_state',
   GAME_STATE_SYNC: 'game_state_sync',
 
+  // Puzzle-specific events
+  JOIN_PUZZLE: 'join_puzzle',
+  LEAVE_PUZZLE: 'leave_puzzle',
+  PUZZLE_STATE_SYNC: 'puzzle_state_sync',
+  MOVE_PIECE: 'move_piece',
+  PUZZLE_COMPLETED: 'puzzle_completed',
+  PUZZLE_RESET: 'reset_puzzle',
+  REQUEST_HINT: 'request_hint',
+  HINT_PROVIDED: 'hint_provided',
+  PUZZLE_ERROR: 'puzzle_error',
+  PLAYER_JOINED_PUZZLE: 'player_joined_puzzle',
+  PLAYER_LEFT_PUZZLE: 'player_left_puzzle',
+
+  // Room management events
+  ROOM_CLOSED: 'room_closed',
+  GAME_TIME_EXPIRED: 'game_time_expired',
+  PLAYER_LEFT_ROOM: 'player_left_room',
+
   // Whiteboard events
   WHITEBOARD_DRAW_START: 'whiteboard_draw_start',
   WHITEBOARD_DRAW_MOVE: 'whiteboard_draw_move',
@@ -94,6 +108,7 @@ const ROOM_NAMES = {
   GAME: (gameId) => `game_${gameId}`,
   GAME_SPECTATORS: (gameId) => `game_${gameId}_spectators`,
   WHITEBOARD: (gameId) => `whiteboard_${gameId}`,
+  PUZZLE: (gameId) => `puzzle_${gameId}`,
   HOME: () => 'home', // Special home room identifier
 };
 
