@@ -1,0 +1,6 @@
+Sky: Light Blue
+Sun: Yellow
+Clouds: White
+Dog: Brown
+Ocean: Blue
+Sand: Beige
