@@ -3,73 +3,76 @@ import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { addToast } from '../../store/toastSlice';
 import { 
-  removePendingInvitation, 
-  updateInvitationStatus 
+  removePendingInvitation 
 } from '../../store/socketSlice';
 import { emitSocketEvent } from '../../store/socketSlice';
 import { Users, Clock, Check, X } from 'lucide-react';
 
-const SimpleInvitationHandler = () => {
+const SimpleInvitationHandler = ({ theme }) => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const theme = useSelector((state) => state.theme.current);
-  const { pendingInvitations } = useSelector((state) => state.socket);
+  const pendingInvitations = useSelector((state) => state.socket.pendingInvitations);
+  const isConnected = useSelector((state) => state.socket.isConnected);
   const processedInvitations = useRef(new Set());
   const [currentInvitation, setCurrentInvitation] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
   const isDarkTheme = theme === 'dark';
 
-  const handleDeclineInvitation = useCallback(async () => {
+  const handleDecline = useCallback(() => {
+    if (!currentInvitation) return;
+
+    setCurrentInvitation(null);
+    dispatch(removePendingInvitation(currentInvitation.id));
+    
+    emitSocketEvent('invitation_response', {
+      invitationId: currentInvitation.id,
+      response: 'declined'
+    });
+
+    dispatch(addToast({
+      message: 'Invitation declined',
+      type: 'info'
+    }));
+  }, [currentInvitation, dispatch]);
+
+  const handleAccept = useCallback(async () => {
     if (!currentInvitation) return;
 
     try {
-      console.log('❌ Declining invitation:', currentInvitation);
-
-      // Send decline response via socket FIRST
-      emitSocketEvent('room_invitation_response', {
-        roomId: currentInvitation.roomId,
-        accepted: false
+      emitSocketEvent('invitation_response', {
+        invitationId: currentInvitation.id,
+        response: 'accepted'
       });
 
-      // Remove from pending invitations immediately
-      dispatch(removePendingInvitation({
-        roomId: currentInvitation.roomId,
-        inviterName: currentInvitation.inviterName
-      }));
-
-      // Show info toast
       dispatch(addToast({
-        message: `Declined invitation from ${currentInvitation.inviterName}`,
-        type: 'info'
+        message: `Joining ${currentInvitation.roomName}...`,
+        type: 'success'
       }));
 
-      // Close modal and reset
-      setShowModal(false);
       setCurrentInvitation(null);
+      
+      setTimeout(() => {
+        navigate(`/room/${currentInvitation.roomId}`);
+      }, 500);
+
     } catch (error) {
-      console.error('Error declining invitation:', error);
+      console.error('Error accepting invitation:', error);
+      dispatch(addToast({
+        message: 'Failed to accept invitation',
+        type: 'error'
+      }));
     }
-  }, [currentInvitation, dispatch]);
+  }, [currentInvitation, navigate, dispatch]);
 
   // Handle new invitations
   useEffect(() => {
-    console.log('🔍 SimpleInvitationHandler - Checking invitations:', {
-      totalPending: pendingInvitations.length,
-      currentInvitation: currentInvitation?.id,
-      processedCount: processedInvitations.current.size
-    });
-
     const pendingInvites = pendingInvitations.filter(inv => 
       inv.status === 'pending' && !processedInvitations.current.has(inv.id)
     );
     
-    console.log('🔍 Filtered pending invites:', pendingInvites.length);
-    
     if (pendingInvites.length > 0 && !currentInvitation) {
       const invitation = pendingInvites[0]; // Handle one at a time
-      
-      console.log('🎯 Processing new invitation:', invitation);
       
       // Mark as processed to prevent duplicate handling
       processedInvitations.current.add(invitation.id);
@@ -89,46 +92,6 @@ const SimpleInvitationHandler = () => {
     }
   }, [pendingInvitations, dispatch, currentInvitation]);
 
-  const handleAcceptInvitation = async () => {
-    if (!currentInvitation) return;
-
-    try {
-      console.log('🎯 Accepting invitation:', currentInvitation);
-      
-      // Send acceptance response via socket FIRST
-      emitSocketEvent('room_invitation_response', {
-        roomId: currentInvitation.roomId,
-        accepted: true
-      });
-
-      // Remove from pending invitations immediately
-      dispatch(removePendingInvitation({
-        roomId: currentInvitation.roomId,
-        inviterName: currentInvitation.inviterName
-      }));
-
-      // Show success toast
-      dispatch(addToast({
-        message: `Joining ${currentInvitation.inviterName}'s room...`,
-        type: 'success'
-      }));
-
-      // Close modal and reset
-      setShowModal(false);
-      setCurrentInvitation(null);
-
-      // Navigate to the room
-      console.log('🚀 Navigating to room:', currentInvitation.roomId);
-      navigate(`/rooms/${currentInvitation.roomId}`);
-    } catch (error) {
-      console.error('Error accepting invitation:', error);
-      dispatch(addToast({
-        message: 'Failed to join room. Please try again.',
-        type: 'error'
-      }));
-    }
-  };
-
   const getTimeAgo = (timestamp) => {
     const now = new Date();
     const inviteTime = new Date(timestamp);
@@ -147,12 +110,12 @@ const SimpleInvitationHandler = () => {
   useEffect(() => {
     if (showModal && currentInvitation) {
       const timer = setTimeout(() => {
-        handleDeclineInvitation();
+        handleDecline();
       }, 30000);
 
       return () => clearTimeout(timer);
     }
-  }, [showModal, currentInvitation, handleDeclineInvitation]);
+  }, [showModal, currentInvitation, handleDecline]);
 
   // Clean up processed invitations when they're removed from Redux store
   useEffect(() => {
@@ -185,7 +148,7 @@ const SimpleInvitationHandler = () => {
             <h2 className="text-xl font-bold">Room Invitation</h2>
           </div>
           <button 
-            onClick={handleDeclineInvitation}
+            onClick={handleDecline}
             className={`p-1 rounded-full transition-colors ${
               isDarkTheme ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
             }`}
@@ -218,7 +181,7 @@ const SimpleInvitationHandler = () => {
         {/* Action Buttons */}
         <div className="flex space-x-3">
           <button
-            onClick={handleDeclineInvitation}
+            onClick={handleDecline}
             className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2 ${
               isDarkTheme 
                 ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
@@ -230,7 +193,7 @@ const SimpleInvitationHandler = () => {
           </button>
           
           <button
-            onClick={handleAcceptInvitation}
+            onClick={handleAccept}
             className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
           >
             <Check size={16} />

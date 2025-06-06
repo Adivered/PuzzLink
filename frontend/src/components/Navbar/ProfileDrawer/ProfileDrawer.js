@@ -1,38 +1,37 @@
 import React, { useRef, useEffect, forwardRef } from 'react';
 import { Link } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import gsap from 'gsap';
+import { useDispatch } from 'react-redux';
+import { toggleTheme } from '../../../store/themeSlice';
+import { gsap } from 'gsap';
 
-const ProfileDrawer = forwardRef(({ isOpen, onClose, user, onLogout, onThemeToggle, isAdmin }, ref) => {
-  const theme = useSelector((state) => state.theme.current);
-  const drawerRef = useRef(null);
+const ProfileDrawer = forwardRef(({ isOpen, onClose, user, onLogout, theme }, ref) => {
+  const dispatch = useDispatch();
   const overlayRef = useRef(null);
+  const internalDrawerRef = useRef(null);
+  const drawerRef = ref || internalDrawerRef;
+
+  const handleThemeToggle = () => {
+    dispatch(toggleTheme());
+  };
 
   useEffect(() => {
     const drawer = drawerRef.current;
     const overlay = overlayRef.current;
 
+    if (!drawer || !overlay) return;
+
     if (isOpen) {
-      gsap.to(overlay, {
-        opacity: 1,
-        duration: 0.3,
-        display: 'block'
-      });
-      gsap.to(drawer, {
-        x: 0,
-        duration: 0.7,
-        ease: "ease.in"
-      });
+      gsap.set(overlay, { display: 'block' });
+      gsap.set(drawer, { x: '100%' });
+      
+      gsap.to(overlay, { opacity: 0.5, duration: 0.3 });
+      gsap.to(drawer, { x: '0%', duration: 0.3 });
     } else {
-      gsap.to(drawer, {
-        x: '100%',
-        duration: 0.5,
-        ease: "ease.out"
-      });
-      gsap.to(overlay, {
-        opacity: 0,
+      gsap.to(drawer, { x: '100%', duration: 0.3 });
+      gsap.to(overlay, { 
+        opacity: 0, 
         duration: 0.3,
-        display: 'none'
+        onComplete: () => gsap.set(overlay, { display: 'none' })
       });
     }
   }, [isOpen]);
@@ -41,13 +40,16 @@ const ProfileDrawer = forwardRef(({ isOpen, onClose, user, onLogout, onThemeTogg
     <>
       <div 
         ref={overlayRef}
-        className="fixed inset-0 bg-black bg-opacity-50 z-40 hidden"
+        className="fixed inset-0 bg-black opacity-0 z-40"
+        style={{ display: 'none' }}
         onClick={onClose}
       />
+      
       <div
         ref={drawerRef}
-        className={`fixed right-0 top-0 h-full w-80 shadow-lg z-50 transform translate-x-full
+        className={`fixed right-0 top-0 h-full w-80 shadow-xl z-50
           ${theme === 'dark' ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-900'}`}
+        style={{ transform: 'translateX(100%)' }}
       >
         <div className="p-6 flex flex-col h-full">
           <div className="flex justify-between items-center mb-6">
@@ -56,14 +58,15 @@ const ProfileDrawer = forwardRef(({ isOpen, onClose, user, onLogout, onThemeTogg
             </h2>
             <button 
               onClick={onClose} 
-              className={`${theme === 'dark' ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`text-2xl ${
+                theme === 'dark' ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'
+              }`}
             >
               ✕
             </button>
           </div>
           
-          <div className="space-y-4 flex-grow relative">
-            <div className={`absolute inset-0 bg-gradient-to-b from-transparent to-${theme === 'dark' ? 'gray-900' : 'gray-200'} pointer-events-none`} />
+          <div className="space-y-4 flex-grow">
             {user ? (
               <div className={`flex items-center space-x-3 p-4 rounded-lg
                 ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'}`}
@@ -72,97 +75,66 @@ const ProfileDrawer = forwardRef(({ isOpen, onClose, user, onLogout, onThemeTogg
                   {user.email?.[0].toUpperCase()}
                 </div>
                 <div>
-                  <p className="font-medium">{user.email}</p>
+                  <p className="font-medium">{user.name}</p>
+                  <p className="text-sm opacity-75">{user.email}</p>
                 </div>
               </div>
             ) : null}
             
-            <div className={`space-y-2 relative z-10 p-4 rounded-lg ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'}`}>
+            <div className={`space-y-3 p-4 rounded-lg ${
+              theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'
+            }`}>
               <Link 
                 to="/" 
-                className={`block transition-colors ${
+                className={`block py-2 px-3 rounded ${
                   theme === 'dark' 
-                    ? 'text-gray-300 hover:text-blue-400' 
-                    : 'text-gray-600 hover:text-blue-500'
+                    ? 'text-gray-300 hover:text-blue-400 hover:bg-gray-600' 
+                    : 'text-gray-600 hover:text-blue-500 hover:bg-gray-200'
                 }`}
                 onClick={onClose}
-                onMouseEnter={(e) => gsap.to(e.target, { scale: 1.1 })}
-                onMouseLeave={(e) => gsap.to(e.target, { scale: 1 })}
               >
-                Home
+                🏠 Home
               </Link>
               
               {user ? (
                 <>
                   <Link 
-                    to="/dashboard" 
-                    className={`block transition-colors ${
-                      theme === 'dark' 
-                        ? 'text-gray-300 hover:text-blue-400' 
-                        : 'text-gray-600 hover:text-blue-500'
-                    }`}
-                    onClick={onClose}
-                    onMouseEnter={(e) => gsap.to(e.target, { scale: 1.1 })}
-                    onMouseLeave={(e) => gsap.to(e.target, { scale: 1 })}
-                  >
-                    Dashboard
-                  </Link>
-
-                  <Link 
                     to="/profile" 
-                    className={`block transition-colors ${
+                    className={`block py-2 px-3 rounded ${
                       theme === 'dark' 
-                        ? 'text-gray-300 hover:text-blue-400' 
-                        : 'text-gray-600 hover:text-blue-500'
+                        ? 'text-gray-300 hover:text-blue-400 hover:bg-gray-600' 
+                        : 'text-gray-600 hover:text-blue-500 hover:bg-gray-200'
                     }`}
                     onClick={onClose}
-                    onMouseEnter={(e) => gsap.to(e.target, { scale: 1.1 })}
-                    onMouseLeave={(e) => gsap.to(e.target, { scale: 1 })}
                   >
-                    Profile
+                    👤 Profile
                   </Link>
-                  
-                  {isAdmin && (
-                    <Link 
-                      to="/admin" 
-                      className={`block transition-colors ${
-                        theme === 'dark' 
-                          ? 'text-gray-300 hover:text-blue-400' 
-                          : 'text-gray-600 hover:text-blue-500'
-                      }`}
-                      onClick={onClose}
-                      onMouseEnter={(e) => gsap.to(e.target, { scale: 1.1 })}
-                      onMouseLeave={(e) => gsap.to(e.target, { scale: 1 })}
-                    >
-                      Control Panel
-                    </Link>
-                  )}
                   
                   <button
                     onClick={() => {
                       onLogout();
                       onClose();
                     }}
-                    className={`block w-full text-left transition-colors ${
-                      theme === 'dark' ? 'text-gray-300 hover:text-blue-400' : 'text-gray-600 hover:text-blue-500'
+                    className={`block w-full text-left py-2 px-3 rounded ${
+                      theme === 'dark' 
+                        ? 'text-gray-300 hover:text-red-400 hover:bg-gray-600' 
+                        : 'text-gray-600 hover:text-red-500 hover:bg-gray-200'
                     }`}
-                    onMouseEnter={(e) => gsap.to(e.target, { scale: 1.1 })}
-                    onMouseLeave={(e) => gsap.to(e.target, { scale: 1 })}
                   >
-                    Logout
+                    🚪 Logout
                   </button>
                 </>
               ) : (
                 <Link 
                   to="/login" 
-                  className={`block transition-colors ${
-                    theme === 'dark' ? 'text-gray-300 hover:text-blue-400' : 'text-gray-600 hover:text-blue-500'
+                  className={`block py-2 px-3 rounded ${
+                    theme === 'dark' 
+                      ? 'text-gray-300 hover:text-blue-400 hover:bg-gray-600' 
+                      : 'text-gray-600 hover:text-blue-500 hover:bg-gray-200'
                   }`}
                   onClick={onClose}
-                  onMouseEnter={(e) => gsap.to(e.target, { scale: 1.1 })}
-                  onMouseLeave={(e) => gsap.to(e.target, { scale: 1 })}
                 >
-                  Login
+                  🔑 Login
                 </Link>
               )}
             </div>
@@ -170,16 +142,17 @@ const ProfileDrawer = forwardRef(({ isOpen, onClose, user, onLogout, onThemeTogg
 
           <div className="flex justify-between items-center mt-4">
             <button 
-              onClick={() => {
-                onThemeToggle();
-              }} 
-              className={`p-2 w-10 h-10 rounded-full transition-colors ${
+              onClick={handleThemeToggle}
+              className={`p-3 rounded-full ${
                 theme === 'dark' 
                   ? 'bg-gray-700 hover:bg-gray-600' 
                   : 'bg-gray-200 hover:bg-gray-300'
               }`}
+              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             >
-              {theme === 'dark' ? '🌞' : '🌙'}
+              <span className="text-xl">
+                {theme === 'dark' ? '🌞' : '🌙'}
+              </span>
             </button>
           </div>
         </div>
@@ -187,5 +160,7 @@ const ProfileDrawer = forwardRef(({ isOpen, onClose, user, onLogout, onThemeTogg
     </>
   );
 });
+
+ProfileDrawer.displayName = 'ProfileDrawer';
 
 export default ProfileDrawer;

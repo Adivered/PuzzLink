@@ -1,67 +1,19 @@
 import React, { useMemo } from 'react';
-import { Plus, Home, MessageCircle } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { Home } from 'lucide-react';
 
 const ConversationList = ({ 
   // Props from parent
-  conversations,
   roomDetails,
-  activeConversation,
   activeRoom,
   unreadCounts,
-  onlineUsers,
   currentGameRoom,
   user,
   isDarkTheme,
   // Callbacks from parent
-  onSelectConversation,
   onSelectRoom,
   onSelectHomeRoom
 }) => {
   // ===== PURE DATA PROCESSING (NO REDUX/SOCKET CALLS) =====
-
-  const getOtherParticipant = (conversation) => {
-    return conversation.participants.find(p => p._id !== user.id);
-  };
-
-  const getConversationName = (conversation) => {
-    if (conversation.isGroup) {
-      return conversation.groupName || 'Group Chat';
-    }
-    const otherUser = getOtherParticipant(conversation);
-    return otherUser?.name || 'Unknown User';
-  };
-
-  const getConversationAvatar = (conversation) => {
-    if (conversation.isGroup) {
-      return conversation.groupAvatar;
-    }
-    const otherUser = getOtherParticipant(conversation);
-    return otherUser?.picture;
-  };
-
-  const getLastMessagePreview = (conversation) => {
-    if (!conversation.lastMessage) return 'No messages yet';
-    
-    const { content, sender, messageType } = conversation.lastMessage;
-    const senderName = sender === user.id ? 'You' : getOtherParticipant(conversation)?.name;
-    
-    if (messageType === 'image') {
-      return `${senderName}: 📷 Image`;
-    }
-    
-    return `${senderName}: ${content.length > 30 ? content.substring(0, 30) + '...' : content}`;
-  };
-
-  const getLastMessageTime = (conversation) => {
-    if (!conversation.lastMessage) return '';
-    
-    try {
-      return formatDistanceToNow(new Date(conversation.lastMessage.createdAt), { addSuffix: true });
-    } catch {
-      return '';
-    }
-  };
 
   // OPTIMIZATION: Memoize room list to prevent infinite re-renders
   const userRooms = useMemo(() => {
@@ -129,7 +81,7 @@ const ConversationList = ({
   }, [user?.homeRoomId, roomDetails, activeRoom, unreadCounts]);
 
   // Show loading only if we have absolutely no useful data
-  const hasUsefulData = homeRoom || userRooms.length > 0 || conversations.length > 0;
+  const hasUsefulData = homeRoom || userRooms.length > 0;
   
   if (!hasUsefulData) {
     return (
@@ -197,7 +149,7 @@ const ConversationList = ({
           {/* User's Joined Rooms */}
           {userRooms.length > 0 && (
             <>
-              {(homeRoom || conversations.length > 0) && (
+              {homeRoom && (
                 <div className={`px-3 py-2 ${isDarkTheme ? 'text-gray-400' : 'text-gray-500'}`}>
                   <div className={`text-xs font-medium uppercase tracking-wider flex items-center`}>
                     <Home size={12} className="mr-2" />
@@ -253,122 +205,6 @@ const ConversationList = ({
                 </div>
               ))}
             </>
-          )}
-
-          {/* Section Divider */}
-          {(homeRoom && conversations.length > 0) || (!homeRoom && conversations.length > 0 && activeRoom && activeRoom !== user?.homeRoomId) ? (
-            <div className={`px-3 py-2 ${isDarkTheme ? 'text-gray-400' : 'text-gray-500'}`}>
-              <div className={`text-xs font-medium uppercase tracking-wider flex items-center`}>
-                <MessageCircle size={12} className="mr-2" />
-                Direct Messages
-              </div>
-            </div>
-          ) : null}
-
-          {/* Regular Conversations */}
-          {conversations.length === 0 && !homeRoom ? (
-            <div className="h-full flex flex-col items-center justify-center p-4">
-              <div className={`text-center ${isDarkTheme ? 'text-gray-400' : 'text-gray-600'}`}>
-                <p className="text-sm mb-2">
-                  {activeRoom && activeRoom !== user?.homeRoomId 
-                    ? "No direct conversations" 
-                    : "No conversations yet"}
-                </p>
-                <p className="text-xs mb-3">
-                  {activeRoom && activeRoom !== user?.homeRoomId 
-                    ? "You're in a room. Start a direct conversation!" 
-                    : "Start chatting with other users"}
-                </p>
-                <button
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    isDarkTheme 
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                      : 'bg-blue-500 hover:bg-blue-600 text-white'
-                  }`}
-                >
-                  <Plus size={16} />
-                  <span>Start a conversation</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            conversations.map((conversation) => {
-              const isActive = activeConversation === conversation._id;
-              const unreadCount = unreadCounts[conversation._id] || 0;
-
-              return (
-                <div
-                  key={conversation._id}
-                  onClick={() => onSelectConversation(conversation._id)}
-                  className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                    isActive
-                      ? isDarkTheme 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-blue-500 text-white'
-                      : isDarkTheme 
-                        ? 'hover:bg-gray-700 text-gray-200' 
-                        : 'hover:bg-gray-100 text-gray-800'
-                  }`}
-                >
-                  <div className="flex items-center space-x-3">
-                    {/* Avatar */}
-                    <div className="relative flex-shrink-0">
-                      {getConversationAvatar(conversation) ? (
-                        <img
-                          src={getConversationAvatar(conversation)}
-                          alt={getConversationName(conversation)}
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium ${
-                          isDarkTheme ? 'bg-gray-600 text-gray-200' : 'bg-gray-300 text-gray-700'
-                        }`}>
-                          {getConversationName(conversation).charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium text-sm truncate">
-                          {getConversationName(conversation)}
-                        </h4>
-                        <div className="flex items-center space-x-2">
-                          {unreadCount > 0 && (
-                            <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold">
-                              {unreadCount > 99 ? '99+' : unreadCount}
-                            </span>
-                          )}
-                          <span className={`text-xs ${isActive ? 'text-blue-100' : isDarkTheme ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {getLastMessageTime(conversation)}
-                          </span>
-                        </div>
-                      </div>
-                      <p className={`text-xs mt-1 truncate ${isActive ? 'text-blue-100' : isDarkTheme ? 'text-gray-400' : 'text-gray-600'}`}>
-                        {getLastMessagePreview(conversation)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-
-          {/* Add new conversation button */}
-          {conversations.length > 0 && (
-            <div className="pt-2 mt-2 border-t border-gray-600 border-opacity-30">
-              <button
-                className={`w-full flex items-center justify-center space-x-2 p-3 rounded-lg text-sm transition-colors ${
-                  isDarkTheme 
-                    ? 'hover:bg-gray-700 text-gray-300 border border-gray-600 border-dashed' 
-                    : 'hover:bg-gray-100 text-gray-600 border border-gray-300 border-dashed'
-                }`}
-              >
-                <Plus size={16} />
-                <span>New Conversation</span>
-              </button>
-            </div>
           )}
         </div>
       </div>

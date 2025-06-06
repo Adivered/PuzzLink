@@ -6,7 +6,7 @@ import {
   closeChat, 
   openChat, 
   setActiveConversation, 
-  setActiveChatRoom,
+  setActiveRoom,
   sendMessage,
   resetUnreadCount
 } from '../../store/chatSlice';
@@ -31,7 +31,6 @@ const FloatingChat = () => {
     onlineUsers
   } = useSelector((state) => state.chat);
   
-  // Get current game room as fallback
   const currentGameRoom = useSelector((state) => state.room.data);
 
   const [showConversations, setShowConversations] = useState(true);
@@ -41,16 +40,12 @@ const FloatingChat = () => {
   const currentChatId = activeConversation || activeRoom;
   const currentMessages = currentChatId ? messages[currentChatId] || [] : [];
 
-  // OPTIMIZATION: Auto-show conversations when no active chat
   useEffect(() => {
     if (!activeConversation && !activeRoom && isOpen) {
       setShowConversations(true);
     }
   }, [activeConversation, activeRoom, isOpen]);
-
-  // ===== CENTRALIZED CHAT STATE MANAGEMENT (NO SOCKET ROOM JOINING) =====
   
-  // Reset unread counts when switching chats - NO socket calls here
   useEffect(() => {
     if (currentChatId) {
       if (activeConversation) {
@@ -61,8 +56,6 @@ const FloatingChat = () => {
     }
   }, [dispatch, activeConversation, activeRoom, currentChatId]);
 
-  // ===== CENTRALIZED MESSAGE SENDING =====
-  
   const handleSendMessage = async (content) => {
     if (!content.trim() || !currentChatId) return false;
 
@@ -74,10 +67,8 @@ const FloatingChat = () => {
     };
 
     try {
-      // Send via Redux action (which adds optimistic message and gets senderId)
       const result = await dispatch(sendMessage(messageData)).unwrap();
       
-      // Send via socket with all required fields - SINGLE CALL
       emitSocketEvent('send_message', {
         content: result.content,
         conversationId: result.conversationId,
@@ -91,26 +82,40 @@ const FloatingChat = () => {
       
       return true;
     } catch (error) {
-      console.error('Failed to send message:', error);
       return false;
     }
   };
 
-  // ===== CENTRALIZED CHAT SELECTION =====
+  const getTotalChatCount = () => {
+    let count = 0;
+    
+    if (user?.homeRoomId && roomDetails[user.homeRoomId]) {
+      count++;
+    }
+    
+    const otherRooms = Object.keys(roomDetails).filter(roomId => 
+      roomId !== user?.homeRoomId && roomDetails[roomId]?.name
+    );
+    count += otherRooms.length;
+    
+    count += conversations.length;
+    
+    return count;
+  };
+  
+  const shouldCollapseList = getTotalChatCount() <= 2;
   
   const handleSelectConversation = (conversationId) => {
     dispatch(setActiveConversation(conversationId));
-    setShowConversations(false);
+    if (shouldCollapseList) {
+      setShowConversations(false);
+    }
   };
 
   const handleSelectRoom = (roomId) => {
-    dispatch(setActiveChatRoom(roomId));
-    // Keep conversation list open when selecting rooms
-    // setShowConversations(false); // Removed this line
+    dispatch(setActiveRoom(roomId));
   };
 
-  // ===== CENTRALIZED CHAT INFO =====
-  
   const getCurrentChatInfo = () => {
     if (activeConversation) {
       const conversation = conversations.find(c => c._id === activeConversation);
@@ -128,7 +133,6 @@ const FloatingChat = () => {
     if (activeRoom) {
       const roomData = roomDetails[activeRoom];
       
-      // If we have room details, use them
       if (roomData && roomData.name) {
         return {
           name: roomData.name,
@@ -138,7 +142,6 @@ const FloatingChat = () => {
         };
       }
       
-      // Fallback to current game room data if this is the current game room
       if (currentGameRoom && currentGameRoom._id === activeRoom && currentGameRoom.name) {
         return {
           name: currentGameRoom.name,
@@ -148,7 +151,6 @@ const FloatingChat = () => {
         };
       }
       
-      // Fallback to checking if it's the Home room
       if (activeRoom === user?.homeRoomId) {
         return {
           name: 'Home',
@@ -158,7 +160,6 @@ const FloatingChat = () => {
         };
       }
       
-      // Final fallback
       return {
         name: 'Room Chat',
         avatar: null,
@@ -174,7 +175,6 @@ const FloatingChat = () => {
     if (activeConversation) {
       const conversation = conversations.find(c => c._id === activeConversation);
       if (conversation) {
-        // For conversations, count online participants
         const onlineParticipants = conversation.participants.filter(p => 
           onlineUsers.includes(p._id)
         );
@@ -183,7 +183,6 @@ const FloatingChat = () => {
     }
     
     if (activeRoom) {
-      // For rooms, use the actual room data from socket
       const roomData = roomDetails[activeRoom];
       if (roomData?.onlineCount !== undefined) {
         return roomData.onlineCount;
@@ -194,14 +193,11 @@ const FloatingChat = () => {
     return 0;
   };
 
-  // Calculate total unread count
   const totalUnreadCount = Object.values(unreadCounts).reduce((sum, count) => sum + count, 0);
 
-  // Get current chat title
   const getCurrentChatTitle = () => {
     const chatInfo = getCurrentChatInfo();
     if (chatInfo) {
-      // Check if we're currently in a room lobby page to avoid duplicate titles
       const isInRoomLobby = window.location.pathname.startsWith('/room/');
       if (chatInfo.type === 'room' && isInRoomLobby) {
         return 'Room Chat';
@@ -214,18 +210,14 @@ const FloatingChat = () => {
   const chatTitle = getCurrentChatTitle();
   const hasActiveChat = !!(activeConversation || activeRoom);
 
-  // OPTIMIZATION: Back to conversations handler
   const handleBackToConversations = () => {
     setShowConversations(true);
   };
 
   if (!user) return null;
 
-  // ===== RENDER =====
-  
   return (
     <>
-      {/* Chat Button */}
       {!isOpen && !isMinimized && (
         <button
           onClick={() => dispatch(openChat())}
@@ -244,7 +236,6 @@ const FloatingChat = () => {
         </button>
       )}
 
-      {/* Minimized Chat */}
       {isMinimized && (
         <div 
           onClick={() => dispatch(openChat())}
@@ -266,19 +257,16 @@ const FloatingChat = () => {
         </div>
       )}
 
-      {/* Chat Window */}
       {isOpen && (
         <div className={`fixed bottom-6 left-6 w-[500px] h-[500px] rounded-lg shadow-2xl overflow-hidden z-40 ${
           isDarkTheme 
             ? 'bg-gray-800 border border-gray-700' 
             : 'bg-white border border-gray-300'
         }`}>
-          {/* Header */}
           <div className={`p-4 border-b flex items-center justify-between ${
             isDarkTheme ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'
           }`}>
             <div className="flex items-center space-x-2">
-              {/* Back button when showing chat and conversations are hidden */}
               {hasActiveChat && !showConversations && (
                 <button
                   onClick={handleBackToConversations}
@@ -328,13 +316,10 @@ const FloatingChat = () => {
             </div>
           </div>
 
-          {/* Content */}
           <div className="h-[436px] flex">
-            {/* Conversation List */}
             {(showConversations || !hasActiveChat) && (
               <div className={`${hasActiveChat ? 'w-[200px]' : 'w-full'} border-r ${isDarkTheme ? 'border-gray-700' : 'border-gray-200'}`}>
                 <ConversationList 
-                  // Pass clean props instead of Redux access
                   conversations={conversations}
                   roomDetails={roomDetails}
                   activeConversation={activeConversation}
@@ -344,19 +329,21 @@ const FloatingChat = () => {
                   currentGameRoom={currentGameRoom}
                   user={user}
                   isDarkTheme={isDarkTheme}
-                  // Pass clean callbacks
                   onSelectConversation={handleSelectConversation}
                   onSelectRoom={handleSelectRoom}
-                  onSelectHomeRoom={() => handleSelectRoom(user?.homeRoomId)}
+                  onSelectHomeRoom={() => {
+                    handleSelectRoom(user?.homeRoomId);
+                    if (shouldCollapseList) {
+                      setShowConversations(false);
+                    }
+                  }}
                 />
               </div>
             )}
             
-            {/* Chat Window */}
             {hasActiveChat && (!showConversations || window.innerWidth >= 768) && (
               <div className={`${showConversations ? 'flex-1' : 'w-full'}`}>
                 <ChatWindow 
-                  // Pass clean props instead of Redux access
                   chatInfo={getCurrentChatInfo()}
                   onlineCount={getOnlineUserCount()}
                   messages={currentMessages}
@@ -365,14 +352,12 @@ const FloatingChat = () => {
                   currentChatId={currentChatId}
                   user={user}
                   isDarkTheme={isDarkTheme}
-                  // Pass clean callbacks
                   onInputChange={(text) => setMessageText(text)}
                   onSendMessage={handleSendMessage}
                 />
               </div>
             )}
             
-            {/* Placeholder when no active chat */}
             {!hasActiveChat && !showConversations && (
               <div className="w-full flex items-center justify-center">
                 <div className={`text-center ${isDarkTheme ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -388,4 +373,4 @@ const FloatingChat = () => {
   );
 };
 
-export default FloatingChat; 
+export default FloatingChat;

@@ -1,16 +1,68 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { format, isToday, isYesterday } from 'date-fns';
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react';
 
 const MessageList = ({ messages, loading, user, isDarkTheme }) => {
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const [lastReadMessageId, setLastReadMessageId] = useState(null);
+  const [hasScrolledToPosition, setHasScrolledToPosition] = useState(false);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Track last read message when component first loads
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length > 0 && !lastReadMessageId) {
+      // Set the last message as "read" when first opening chat
+      const lastMessage = messages[messages.length - 1];
+      setLastReadMessageId(lastMessage._id || lastMessage.tempId);
     }
+  }, [messages, lastReadMessageId]);
+
+  // Scroll to last read message position on initial load
+  useEffect(() => {
+    if (lastReadMessageId && !hasScrolledToPosition && messagesContainerRef.current) {
+      const messageElement = document.querySelector(`[data-message-id="${lastReadMessageId}"]`);
+      if (messageElement) {
+        messageElement.scrollIntoView({ behavior: 'instant', block: 'center' });
+        setHasScrolledToPosition(true);
+      } else if (messagesEndRef.current) {
+        // Fallback to bottom if specific message not found
+        messagesEndRef.current.scrollIntoView({ behavior: 'instant' });
+        setHasScrolledToPosition(true);
+      }
+    }
+  }, [lastReadMessageId, hasScrolledToPosition, messages]);
+
+  // Only auto-scroll to bottom for new messages from current user
+  useEffect(() => {
+    if (messages.length > 0 && hasScrolledToPosition) {
+      const lastMessage = messages[messages.length - 1];
+      const isOwnMessage = lastMessage.sender._id === user.id;
+      
+      // Only auto-scroll if it's user's own message
+      if (isOwnMessage && messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        setLastReadMessageId(lastMessage._id || lastMessage.tempId);
+      }
+    }
+  }, [messages, hasScrolledToPosition, user.id]);
+
+  // Update last read message when user scrolls near bottom
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+      
+      if (isNearBottom && messages.length > 0) {
+        const lastMessage = messages[messages.length - 1];
+        setLastReadMessageId(lastMessage._id || lastMessage.tempId);
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
   }, [messages]);
 
   const formatMessageTime = (timestamp) => {
@@ -130,7 +182,7 @@ const MessageList = ({ messages, loading, user, isDarkTheme }) => {
         const messageStatus = getMessageStatus(message);
 
         return (
-          <div key={message._id || message.tempId}>
+          <div key={message._id || message.tempId} data-message-id={message._id || message.tempId}>
             {/* Date Separator */}
             {showDateSeparator && (
               <div className="flex items-center justify-center my-4">

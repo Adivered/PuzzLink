@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { createRoom } from "../../store/roomSlice";
 import { addToast } from "../../store/toastSlice";
@@ -9,7 +9,7 @@ import ImageStation from "./stations/ImageStation";
 import StationIndicator from "./stations/StationIndicator";
 
 
-const CreateRoom = () => {
+const CreateRoom = ({ onStationChange }) => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const theme = useSelector((state) => state.theme.current);
@@ -30,6 +30,13 @@ const CreateRoom = () => {
   });
 
   const isDarkTheme = theme === "dark";
+
+  // Notify parent when station changes
+  useEffect(() => {
+    if (onStationChange) {
+      onStationChange(currentStation);
+    }
+  }, [currentStation, onStationChange]);
 
   const handleNext = () => {
     if (currentStation < 2) {
@@ -94,76 +101,84 @@ const CreateRoom = () => {
   };
 
   return (
-    <div
-      className={`w-full mx-auto p-6 sm:p-8 lg:p-10 rounded-2xl shadow-xl transition-all duration-300 ${
-        isDarkTheme 
-          ? "bg-gray-800/90 backdrop-blur-sm border border-gray-700/50 text-white" 
-          : "bg-white/90 backdrop-blur-sm border border-gray-200/50 text-gray-800 shadow-2xl"
-      }`}
-    >
-      <StationIndicator currentStation={currentStation} isDarkTheme={isDarkTheme} roomData={roomData} />
+    <div className="h-full flex flex-col">
+      {/* Card Container */}
+      <div
+        className={`h-full flex flex-col p-6 lg:p-8 rounded-2xl shadow-2xl transition-all duration-300 backdrop-blur-sm ${
+          isDarkTheme 
+            ? "bg-gray-800/95 border border-gray-700/50 text-white" 
+            : "bg-white/95 border border-gray-200/50 text-gray-800"
+        }`}
+      >
+        {/* Station Indicator */}
+        <div className="flex-none mb-3 lg:mb-4">
+          <StationIndicator currentStation={currentStation} isDarkTheme={isDarkTheme} roomData={roomData} />
+        </div>
 
-      <div ref={stationsRef} className="relative min-h-[400px] sm:min-h-[450px] lg:min-h-[500px]">
-        <GameTypeStation
-          roomData={roomData}
-          updateRoomData={updateRoomData}
-          isActive={currentStation === 0}
-          isDarkTheme={isDarkTheme}
-        />
-        <RoomConfigStation
-          roomData={roomData}
-          updateRoomData={updateRoomData}
-          isActive={currentStation === 1}
-          isDarkTheme={isDarkTheme}
-        />
-        <ImageStation
-          roomData={roomData}
-          updateRoomData={updateRoomData}
-          isActive={currentStation === 2}
-          isDarkTheme={isDarkTheme}
-        />
-      </div>
+        {/* Main Content Area - Expands to fill available space */}
+        <div ref={stationsRef} className="flex-1 relative min-h-0">
+          <GameTypeStation
+            roomData={roomData}
+            updateRoomData={updateRoomData}
+            isActive={currentStation === 0}
+            isDarkTheme={isDarkTheme}
+          />
+          <RoomConfigStation
+            roomData={roomData}
+            updateRoomData={updateRoomData}
+            isActive={currentStation === 1}
+            isDarkTheme={isDarkTheme}
+          />
+          <ImageStation
+            roomData={roomData}
+            updateRoomData={updateRoomData}
+            isActive={currentStation === 2}
+            isDarkTheme={isDarkTheme}
+          />
+        </div>
 
-      <div className={`flex ${currentStation > 0 ? "justify-between" : "justify-end"} mt-8 pt-6 border-t ${
-        isDarkTheme ? 'border-gray-700/50' : 'border-gray-200/50'
-      }`}>
-        {currentStation > 0 && (
-          <button
-            onClick={handlePrevious}
-            className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 hover:scale-105 ${
-              isDarkTheme 
-                ? "bg-gray-700/80 hover:bg-gray-600 text-white shadow-lg" 
-                : "bg-gray-100 hover:bg-gray-200 text-gray-800 shadow-md"
-            }`}
-          >
-            Previous
-          </button>
-        )}
-        {currentStation < 2 && !(currentStation === 1 && roomData.gameMode === 'Drawable') ? (
-          <button
-            onClick={handleNext}
-            className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 hover:scale-105 shadow-lg ${
-              !canProceedToNext() 
-                ? "opacity-50 cursor-not-allowed bg-gray-400 text-gray-600" 
-                : "bg-blue-500 hover:bg-blue-600 text-white hover:shadow-blue-500/25"
-            }`}
-            disabled={!canProceedToNext()}
-          >
-            Next
-          </button>
-        ) : (
-          <button
-            onClick={handleCreateRoom}
-            className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 hover:scale-105 shadow-lg ${
-              isSubmitting 
-                ? "opacity-50 cursor-not-allowed bg-gray-400 text-gray-600" 
-                : "bg-green-500 hover:bg-green-600 text-white hover:shadow-green-500/25"
-            }`}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? "Creating..." : "Create Room"}
-          </button>
-        )}
+        {/* Navigation Controls */}
+        <div className={`flex-none ${currentStation > 0 ? "flex justify-between" : "flex justify-end"} mt-3 lg:mt-4 pt-3 border-t ${
+          isDarkTheme ? 'border-gray-700/50' : 'border-gray-200/50'
+        }`}>
+          {currentStation > 0 && (
+            <button
+              onClick={handlePrevious}
+              className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 hover:scale-105 text-sm ${
+                isDarkTheme 
+                  ? "bg-red-700/80 hover:bg-red-600 text-white shadow-md" 
+                  : "bg-red-100 hover:bg-red-200 text-red-800 shadow-sm"
+              }`}
+            >
+              Previous
+            </button>
+          )}
+          {currentStation < 2 && !(currentStation === 1 && roomData.gameMode === 'Drawable') ? (
+            <button
+              onClick={handleNext}
+              className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 hover:scale-105 shadow-md text-sm ${
+                !canProceedToNext() 
+                  ? "opacity-50 cursor-not-allowed bg-gray-400 text-gray-600" 
+                  : "bg-purple-500 hover:bg-purple-600 text-white hover:shadow-purple-500/25"
+              }`}
+              disabled={!canProceedToNext()}
+            >
+              Next
+            </button>
+          ) : (
+            <button
+              onClick={handleCreateRoom}
+              className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 hover:scale-105 shadow-md text-sm ${
+                isSubmitting 
+                  ? "opacity-50 cursor-not-allowed bg-gray-400 text-gray-600" 
+                  : "bg-green-500 hover:bg-green-600 text-white hover:shadow-green-500/25"
+              }`}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "Creating..." : "Create Room"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

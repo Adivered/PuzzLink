@@ -7,6 +7,7 @@ import useAuth from '../../../hooks/useAuth';
 import useLoginAnimation from '../../../hooks/animations/useLoginAnimation';
 import themeStyles from '../../../utils/themeStyles';
 import useIsomorphicLayoutEffect from '../../../hooks/useIsomorphicLayoutEffect';
+import CenteredLoader from '../../../components/common/LoadingSpinner';
 
 const Login = () => {
   const theme = useSelector((state) => state.theme.current);
@@ -23,6 +24,11 @@ const Login = () => {
       navigate(from);
     }
   }, [isAuthenticated, navigate, from]);
+
+  // Show loading if user is authenticated (will redirect)
+  if (isAuthenticated) {
+    return <CenteredLoader statusText="Redirecting..." />;
+  }
 
   return (
     <div className={`min-h-screen w-full flex items-center justify-center p-4 ${currentTheme.background}`}>

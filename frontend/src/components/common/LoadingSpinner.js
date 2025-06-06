@@ -1,45 +1,42 @@
 import React from 'react';
-import { useSelector } from 'react-redux';
 
-const CenteredLoader = ({ 
-  statusText = 'Loading...', 
-  showProgress = false, 
-  progressSteps = [], 
-  progressLabels = []
+const LoadingSpinner = ({ 
+  size = 'md', 
+  color = 'blue', 
+  text = 'Loading...', 
+  theme = 'light' 
 }) => {
-  const theme = useSelector((state) => state.theme.current);
-  const isDarkTheme = theme === 'dark';
+  const sizeClasses = {
+    sm: 'w-4 h-4',
+    md: 'w-8 h-8', 
+    lg: 'w-12 h-12',
+    xl: 'w-16 h-16'
+  };
+
+  const colorClasses = {
+    blue: 'border-blue-500',
+    green: 'border-green-500',
+    red: 'border-red-500',
+    gray: theme === 'dark' ? 'border-gray-300' : 'border-gray-600'
+  };
 
   return (
-    <div className={`fixed inset-0 flex items-center justify-center z-50 ${
-      isDarkTheme ? 'bg-gray-900' : 'bg-gray-50'
-    }`}>
-      <div className={`text-center ${isDarkTheme ? 'text-gray-400' : 'text-gray-600'}`}>
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-        <p className="text-lg mb-2">
-          {statusText}
+    <div className="flex flex-col items-center justify-center space-y-3">
+      <div className={`animate-spin rounded-full border-2 border-t-transparent ${sizeClasses[size]} ${colorClasses[color]}`}></div>
+      {text && (
+        <p className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
+          {text}
         </p>
-        {showProgress && progressSteps.length > 0 && (
-          <div className="flex items-center justify-center space-x-4 mt-4">
-            {progressLabels.map((label, index) => (
-              <div key={label} className="flex items-center space-x-1">
-                <div className={`w-2 h-2 rounded-full ${
-                  progressSteps[index] 
-                    ? 'bg-green-500' 
-                    : isDarkTheme ? 'bg-gray-600' : 'bg-gray-300'
-                }`}></div>
-                <span className={`text-xs ${
-                  isDarkTheme ? 'text-gray-400' : 'text-gray-500'
-                }`}>
-                  {label}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 };
 
+const CenteredLoader = ({ theme = 'light', ...props }) => (
+  <div className="flex items-center justify-center min-h-[200px]">
+    <LoadingSpinner theme={theme} {...props} />
+  </div>
+);
+
+export { LoadingSpinner };
 export default CenteredLoader; 

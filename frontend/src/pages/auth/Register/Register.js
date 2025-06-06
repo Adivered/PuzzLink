@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 // import { useAuth } from '../../../context/AuthContext';
 import { useSelector } from 'react-redux';
+import useIsomorphicLayoutEffect from '../../../hooks/useIsomorphicLayoutEffect';
+import CenteredLoader from '../../../components/common/LoadingSpinner';
+
 function Register() {
   const [formData, setFormData] = useState({
     email: '',
@@ -12,7 +15,14 @@ function Register() {
   });
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { login } = useSelector((state) => state.auth);
+  const { login, isAuthenticated } = useSelector((state) => state.auth);
+
+  // Redirect if already authenticated
+  useIsomorphicLayoutEffect(() => {
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
 
   const registerMutation = useMutation({
     mutationFn: async (userData) => {
@@ -62,6 +72,11 @@ function Register() {
       password: formData.password
     });
   };
+
+  // Show loading if user is authenticated (will redirect)
+  if (isAuthenticated) {
+    return <CenteredLoader statusText="Redirecting..." />;
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">

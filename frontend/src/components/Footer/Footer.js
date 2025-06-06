@@ -1,9 +1,6 @@
 import React from 'react';
-import { useSelector } from 'react-redux';
 
-const Footer = () => {
-  const theme = useSelector((state) => state.theme.current);
-
+const Footer = ({ theme }) => {
   return (
     <footer className={`py-8 w-full mt-auto border-t ${
       theme === 'dark' 

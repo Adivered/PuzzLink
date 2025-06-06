@@ -15,11 +15,12 @@ import GameRoom from './pages/Game/GameRoom';
 import FloatingChat from './components/Chat/FloatingChat';
 import SimpleInvitationHandler from './components/common/SimpleInvitationHandler';
 
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { disconnectSocket } from './store/socketSlice';
 
 const App = () => {
   const dispatch = useDispatch();
+  const theme = useSelector((state) => state.theme.current);
 
   // Global socket cleanup only on actual page unload
   useEffect(() => {
@@ -74,7 +75,7 @@ const App = () => {
         </Routes>
         <ToastContainer />
         <FloatingChat />
-        <SimpleInvitationHandler />
+        <SimpleInvitationHandler theme={theme} />
       </TransitionLayout>
     </>
   );

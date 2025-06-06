@@ -29,17 +29,13 @@ const PuzzleGame = () => {
   const [zoomLevel, setZoomLevel] = useState(() => {
     // Load zoom from localStorage with bigger default
     const savedZoom = localStorage.getItem('puzzle-zoom-level');
-    return savedZoom ? parseFloat(savedZoom) : 1.2; // Increased default from 1 to 1.2
+    return savedZoom ? parseFloat(savedZoom) : 1.2; 
   });
   const [timer, setTimer] = useState(0);
   const [activeId, setActiveId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
-  
-  // Get grid size - fixed at 4x4
   const gridSize = 4;
-
-  // Drag and drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -48,28 +44,9 @@ const PuzzleGame = () => {
     })
   );
 
-  // Use pieces directly from Redux - no more optimistic updates
+  // Use pieces directly from Redux
   const displayPieces = useMemo(() => {
     return pieces || [];
-  }, [pieces]);
-
-  // Debug logging for pieces state
-  useEffect(() => {
-    if (pieces && pieces.length > 0) {
-      const bankCount = pieces.filter(p => p.currentPosition === null || p.currentPosition === undefined).length;
-      const gridCount = pieces.filter(p => p.currentPosition !== null && p.currentPosition !== undefined).length;
-      
-      console.log('🔍 Frontend pieces debug:', {
-        total: pieces.length,
-        bank: bankCount,
-        grid: gridCount,
-        samplePieces: pieces.slice(0, 3).map(p => ({
-          id: p._id?.slice(-4),
-          currentPosition: p.currentPosition,
-          position: p.position
-        }))
-      });
-    }
   }, [pieces]);
 
   // Separate pieces into grid and bank using display pieces
@@ -88,26 +65,23 @@ const PuzzleGame = () => {
     const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
     const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
     
-    // Slightly reduced available space for smaller grid
-    const availableWidth = viewportWidth * 0.5; // Reduced from 0.6 to 0.5
-    const availableHeight = viewportHeight * 0.55; // Reduced from 0.65 to 0.55
+    const availableWidth = viewportWidth * 0.5;
+    const availableHeight = viewportHeight * 0.55;
     const availableSpace = Math.min(availableWidth, availableHeight);
     
-    const baseSize = availableSpace / 4.8; // Increased divisor from 4.5 to 4.8 for smaller cells
-    const minSize = 65; // Reduced minimum size from 70 to 65
-    const maxSize = 120; // Reduced maximum size from 140 to 120
+    const baseSize = availableSpace / 4.8;
+    const minSize = 65;
+    const maxSize = 120;
     
     let calculatedSize = Math.max(minSize, Math.min(maxSize, baseSize * zoomLevel));
     
-    // Adaptive sizing: increase piece size if grid is not full
     if (gridPreferences.adaptiveSizing && gridPieces.length > 0) {
-      const totalGridCells = 16; // Fixed 4x4 = 16 cells
+      const totalGridCells = 16;
       const occupiedCells = gridPieces.length;
       const fillRatio = occupiedCells / totalGridCells;
       
-      // If grid is less than 50% full, increase piece size slightly
       if (fillRatio < 0.5) {
-        const sizeMultiplier = 1 + (0.5 - fillRatio) * 0.3; // Reduced from 0.4 to 0.3
+        const sizeMultiplier = 1 + (0.5 - fillRatio) * 0.3;
         calculatedSize = Math.min(maxSize, calculatedSize * sizeMultiplier);
       }
     }
@@ -120,49 +94,46 @@ const PuzzleGame = () => {
     const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
     const pieceCount = bankPieces.length;
     
-    // Calculate available width based on adaptive bank width - more conservative
     let bankContainerWidth;
     if (pieceCount <= 4) {
-      bankContainerWidth = viewportWidth > 1280 ? 640 : viewportWidth > 1024 ? 576 : 384; // xl:40rem, lg:36rem, fallback
+      bankContainerWidth = viewportWidth > 1280 ? 640 : viewportWidth > 1024 ? 576 : 384;
     } else if (pieceCount <= 8) {
-      bankContainerWidth = viewportWidth > 1280 ? 576 : viewportWidth > 1024 ? 512 : 384; // xl:36rem, lg:32rem, fallback
+      bankContainerWidth = viewportWidth > 1280 ? 576 : viewportWidth > 1024 ? 512 : 384;
     } else if (pieceCount <= 12) {
-      bankContainerWidth = viewportWidth > 1280 ? 512 : viewportWidth > 1024 ? 448 : 384; // xl:32rem, lg:28rem, fallback
+      bankContainerWidth = viewportWidth > 1280 ? 512 : viewportWidth > 1024 ? 448 : 384;
     } else {
-      bankContainerWidth = viewportWidth > 1280 ? 448 : viewportWidth > 1024 ? 384 : 320; // xl:28rem, lg:24rem, fallback
+      bankContainerWidth = viewportWidth > 1280 ? 448 : viewportWidth > 1024 ? 384 : 320;
     }
     
-    const availableWidth = bankContainerWidth * 0.75; // More conservative - use 75% of available width
+    const availableWidth = bankContainerWidth * 0.75;
     
-    // Adaptive column count based on piece count and space
     let columnsCount;
     if (pieceCount <= 1) {
-      columnsCount = 1; // Single column for one piece
+      columnsCount = 1;
     } else if (pieceCount <= 4) {
-      columnsCount = 2; // Two columns for few pieces
+      columnsCount = 2;
     } else if (pieceCount <= 9) {
-      columnsCount = 3; // Three columns for moderate pieces
+      columnsCount = 3;
     } else {
-      columnsCount = viewportWidth > 1280 ? 4 : 3; // Four columns on very wide screens, three otherwise
+      columnsCount = viewportWidth > 1280 ? 4 : 3;
     }
     
-    const gapSpace = (columnsCount - 1) * (viewportWidth > 1024 ? 24 : 16); // gap-6 lg, gap-4 default
+    const gapSpace = (columnsCount - 1) * (viewportWidth > 1024 ? 24 : 16);
     const maxPieceWidth = (availableWidth - gapSpace) / columnsCount;
     
-    const baseSize = Math.min(120, maxPieceWidth); // Reduced from 200 to 120 for more reasonable base size
+    const baseSize = Math.min(120, maxPieceWidth);
     
     if (gridPreferences.adaptiveSizing && bankPieces.length > 0) {
-      // More conservative adaptive sizing
       if (bankPieces.length <= 1) {
-        return Math.min(160, baseSize * 1.4); // Moderately larger for 1 piece
+        return Math.min(160, baseSize * 1.4);
       } else if (bankPieces.length <= 4) {
-        return Math.min(140, baseSize * 1.2); // Slightly larger for 2-4 pieces
+        return Math.min(140, baseSize * 1.2);
       } else if (bankPieces.length <= 8) {
-        return Math.min(130, baseSize * 1.1); // Minimally larger for 5-8 pieces
+        return Math.min(130, baseSize * 1.1);
       }
     }
     
-    return Math.max(80, baseSize); // Ensure minimum size of 80px
+    return Math.max(80, baseSize);
   }, [bankPieces.length, gridPreferences.adaptiveSizing]);
 
   // Timer effect
@@ -188,17 +159,13 @@ const PuzzleGame = () => {
     const pieceCount = bankPieces.length;
     
     if (pieceCount <= 4) {
-      // Very few pieces - make it much wider
-      return "w-full lg:w-[36rem] xl:w-[40rem]"; // 576px lg, 640px xl (increased)
+      return "w-full lg:w-[36rem] xl:w-[40rem]";
     } else if (pieceCount <= 8) {
-      // Few pieces - make it wider
-      return "w-full lg:w-[32rem] xl:w-[36rem]"; // 512px lg, 576px xl (increased)  
+      return "w-full lg:w-[32rem] xl:w-[36rem]";
     } else if (pieceCount <= 12) {
-      // Some pieces - moderately wider
-      return "w-full lg:w-[28rem] xl:w-[32rem]"; // 448px lg, 512px xl (increased)
+      return "w-full lg:w-[28rem] xl:w-[32rem]";
     } else {
-      // Many pieces - standard width but still larger
-      return "w-full lg:w-96 xl:w-[28rem]"; // 384px lg, 448px xl (increased)
+      return "w-full lg:w-96 xl:w-[28rem]";
     }
   }, [bankPieces.length]);
 
@@ -329,12 +296,12 @@ const PuzzleGame = () => {
 
   // Get piece at specific grid position using display pieces
   const getPieceAtPosition = useCallback((row, col) => {
-    return gridPieces.find(p => 
+    return displayPieces.find(p => 
       p.currentPosition && 
       p.currentPosition.row === row && 
       p.currentPosition.col === col
     );
-  }, [gridPieces]);
+  }, [displayPieces]);
 
   // Handle leave room
   const handleLeaveRoom = useCallback(() => {

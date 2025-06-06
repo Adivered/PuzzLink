@@ -18,12 +18,10 @@ export const checkAuthStatus = createAsyncThunk(
   'auth/status',
   async (_, { rejectWithValue }) => {
     try {
-      console.log("Pinging server for status")
       const response = await axios.get('/auth/status');
-      console.log("Response: ", response.data)
       return response.data;
     } catch (error) {
-      return rejectWithValue(null); // Just return null on failed auth
+      return rejectWithValue(null);
     }
   }
 );
@@ -88,7 +86,6 @@ const authSlice = createSlice({
         state.user = null;
         state.statusChecked = true;
       })
-      // Login cases
       .addCase(loginUser.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -105,7 +102,6 @@ const authSlice = createSlice({
         state.isAuthenticated = false;
         state.user = null;
       })
-      // Logout cases
       .addCase(logoutUser.fulfilled, (state) => {
         state.user = null;
         state.isAuthenticated = false;

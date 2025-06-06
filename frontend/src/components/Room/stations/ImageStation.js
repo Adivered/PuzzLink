@@ -87,23 +87,24 @@ const ImageStation = ({ roomData, updateRoomData, isActive, isDarkTheme }) => {
       img.crossOrigin = "anonymous";
       img.onload = () => {
         const imgRatio = img.width / img.height;
-        const canvasRatio = canvas.width / canvas.height;
         let drawWidth, drawHeight, offsetX, offsetY;
 
-        if (imgRatio > canvasRatio) {
-          drawWidth = canvas.width;
-          drawHeight = canvas.width / imgRatio;
-          offsetX = 0;
-          offsetY = (canvas.height - drawHeight) / 2;
-        } else {
+        // Make image span full width
+        drawWidth = canvas.width;
+        drawHeight = canvas.width / imgRatio;
+        offsetX = 0;
+        offsetY = (canvas.height - drawHeight) / 2;
+
+        // If height exceeds canvas, fit by height instead
+        if (drawHeight > canvas.height) {
           drawHeight = canvas.height;
           drawWidth = canvas.height * imgRatio;
           offsetX = (canvas.width - drawWidth) / 2;
           offsetY = 0;
         }
 
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = isDarkTheme ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)";
+        // Remove shadows
+        ctx.shadowBlur = 0;
         ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
       };
       img.src = roomData.imagePreview;
@@ -133,11 +134,8 @@ const ImageStation = ({ roomData, updateRoomData, isActive, isDarkTheme }) => {
       }`}
       style={{ display: isActive ? "block" : "none" }}
     >
-      <div className="max-w-4xl mx-auto p-6 h-full flex flex-col">
-        <h2 className="text-3xl font-extrabold mb-6 text-center bg-clip-text text-transparent bg-gradient-to-r from-purple-500 to-pink-500">
-          Image Playground
-        </h2>
-        <div className="flex-1 flex flex-col gap-6 min-h-0">
+      <div className="max-w-5xl mx-auto p-4 h-full flex flex-col">
+        <div className="flex-1 flex flex-col gap-3 min-h-0">
           <div>
             <div className="flex justify-center">
               <div className="inline-flex bg-white/10 backdrop-blur-lg rounded-full p-1 shadow-lg">
@@ -145,7 +143,7 @@ const ImageStation = ({ roomData, updateRoomData, isActive, isDarkTheme }) => {
                   <button
                     key={tab}
                     onClick={() => switchTab(tab)}
-                    className={`relative px-6 py-2 rounded-full font-semibold transition-all duration-300 ${
+                    className={`relative px-4 py-1.5 rounded-full font-semibold transition-all duration-300 text-sm ${
                       activeTab === tab
                         ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white"
                         : "text-gray-400 hover:text-gray-600"
@@ -159,90 +157,102 @@ const ImageStation = ({ roomData, updateRoomData, isActive, isDarkTheme }) => {
               </div>
             </div>
           </div>
-          <div className="flex-1 min-h-0">
-            {activeTab === "upload" ? (
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`h-full p-8 rounded-2xl border-4 border-dashed transition-all duration-300 ${
-                  isDragging
-                    ? "border-purple-500 bg-purple-500/10 scale-105"
-                    : `${isDarkTheme ? "border-gray-700" : "border-gray-300"}`
-                }`}
-              >
-                <label className="flex flex-col items-center justify-center h-full cursor-pointer">
-                  <div className="relative">
-                    <CloudArrowUpIcon
-                      className={`w-16 h-16 mb-4 transition-colors duration-300 ${
-                        isDragging ? "text-purple-500" : "text-gray-500"
-                      }`}
-                    />
-                  </div>
-                  <p className="text-lg font-medium mb-2">
-                    {isDragging ? "Drop the Magic!" : "Drag, Drop, or Click!"}
-                  </p>
-                  <p className="text-sm text-gray-500">PNG, JPG, or GIF (max 10MB)</p>
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                  />
-                </label>
-              </div>
-            ) : (
-              <div className="h-full flex flex-col gap-4">
-                <div className="relative flex-1">
-                  <textarea
-                    value={roomData.imagePrompt}
-                    onChange={handlePromptChange}
-                    className={`w-full h-full p-4 pr-12 rounded-xl border-2 ${
-                      isDarkTheme
-                        ? "bg-gray-800 border-gray-700 text-white"
-                        : "bg-white border-gray-200 text-gray-900"
-                    } focus:outline-none focus:border-purple-500 transition-all duration-300`}
-                    placeholder="Paint your imagination with words... (e.g., 'A whimsical forest with glowing mushrooms')"
-                  />
-                  <span className="absolute right-4 top-4 text-gray-500">✨</span>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleGenerateImage}
-                    disabled={isGenerating}
-                    className={`px-6 py-2 rounded-full font-semibold transition-all duration-300 ${
-                      isGenerating
-                        ? "bg-gray-500 cursor-not-allowed"
-                        : "bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600"
+          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="flex flex-col">
+              {activeTab === "upload" ? (
+                <>
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`flex-1 p-4 rounded-xl border-2 border-dashed transition-all duration-300 ${
+                      isDragging
+                        ? "border-purple-500 bg-purple-500/10 scale-105"
+                        : `${isDarkTheme ? "border-gray-700" : "border-gray-300"}`
                     }`}
+                    style={{ minHeight: '200px' }}
                   >
-                    {isGenerating ? "Generating..." : "Generate"}
-                  </button>
-                </div>
-                {error && <div className="text-red-500 text-center">{error}</div>}
-              </div>
-            )}
-          </div>
-          <div className="flex-1 min-h-0">
-            <h3 className="text-xl font-semibold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-purple-500">
-              Sneak Peek
-            </h3>
-            <div
-              className={`relative rounded-2xl overflow-hidden border-2 ${
-                isDarkTheme ? "border-gray-700 bg-gray-800" : "border-gray-200 bg-gray-50"
-              } w-full h-full`}
-            >
-              {roomData.imagePreview ? (
-                <canvas ref={canvasRef} className="w-full h-full object-contain" />
+                    <label className="flex flex-col items-center justify-center h-full cursor-pointer">
+                      <div className="relative">
+                        <CloudArrowUpIcon
+                          className={`w-10 h-10 mb-3 transition-colors duration-300 ${
+                            isDragging ? "text-purple-500" : "text-gray-500"
+                          }`}
+                        />
+                      </div>
+                      <p className="text-sm font-medium mb-1">
+                        {isDragging ? "Drop the Magic!" : "Drag, Drop, or Click!"}
+                      </p>
+                      <p className="text-xs text-gray-500">PNG, JPG, or GIF (max 10MB)</p>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleImageChange}
+                      />
+                    </label>
+                  </div>
+                  <div className="h-8"></div>
+                </>
               ) : (
-                <div className="flex items-center justify-center w-full h-full text-gray-500">
-                  <p className="text-center px-4">
-                    {activeTab === "upload"
-                      ? "Upload to unveil your masterpiece!"
-                      : "Craft a prompt to conjure an image!"}
-                  </p>
-                </div>
+                <>
+                  <div className="relative flex-1" style={{ minHeight: '200px' }}>
+                    <textarea
+                      value={roomData.imagePrompt}
+                      onChange={handlePromptChange}
+                      className={`w-full h-full p-3 pr-10 rounded-xl border-2 focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none ${
+                        isDarkTheme
+                          ? "bg-gray-800 border-gray-700 text-white focus:border-purple-500"
+                          : "bg-white border-gray-200 text-gray-900 focus:border-purple-500"
+                      } transition-all duration-300`}
+                      placeholder="Paint your imagination with words... (e.g., 'A whimsical forest with glowing mushrooms')"
+                    />
+                    <span className="absolute right-3 top-3 text-gray-500">✨</span>
+                  </div>
+                  <div className="flex justify-end mt-2 h-6">
+                    <button
+                      onClick={handleGenerateImage}
+                      disabled={isGenerating}
+                      className={`px-4 py-1.5 rounded-full font-semibold transition-all duration-300 text-sm ${
+                        isGenerating
+                          ? "bg-gray-500 cursor-not-allowed"
+                          : "bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600"
+                      }`}
+                    >
+                      {isGenerating ? "Generating..." : "Generate"}
+                    </button>
+                  </div>
+                  {error && <div className="text-red-500 text-center text-xs mt-1">{error}</div>}
+                </>
               )}
+            </div>
+            <div className="flex flex-col">
+              <div className="relative">
+                <div className="absolute -top-6 right-0 z-10">
+                  <h3 className="text-sm font-semibold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-purple-500">
+                    Sneak Peek
+                  </h3>
+                </div>
+                <div
+                  className={`relative rounded-xl overflow-hidden border-2 flex-1 ${
+                    isDarkTheme ? "border-gray-700 bg-gray-800" : "border-gray-200 bg-gray-50"
+                  }`}
+                  style={{ minHeight: '200px' }}
+                >
+                  {roomData.imagePreview ? (
+                    <canvas ref={canvasRef} className="w-full h-full" />
+                  ) : (
+                    <div className="flex items-center justify-center w-full h-full text-gray-500">
+                      <p className="text-center px-4 text-xs">
+                        {activeTab === "upload"
+                          ? "Upload to unveil your masterpiece!"
+                          : "Craft a prompt to conjure an image!"}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="h-8"></div>
             </div>
           </div>
         </div>
