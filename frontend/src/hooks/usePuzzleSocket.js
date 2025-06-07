@@ -1,20 +1,13 @@
 import { useCallback } from 'react';
-import { getSocketInstance } from '../store/socketSlice';
+import { getSocketInstance } from '../app/store/socketSlice';
 
 const usePuzzleSocket = () => {
   const socket = getSocketInstance();
 
-  const joinPuzzle = useCallback((gameId) => {
+  const requestPuzzleState = useCallback((gameId) => {
     if (socket) {
-      console.log('🧩 Joining puzzle game:', gameId);
-      socket.emit('join_puzzle', { gameId });
-    }
-  }, [socket]);
-
-  const leavePuzzle = useCallback((gameId) => {
-    if (socket) {
-      console.log('🧩 Leaving puzzle game:', gameId);
-      socket.emit('leave_puzzle', { gameId });
+      console.log('🧩 Requesting puzzle state:', gameId);
+      socket.emit('request_game_state', { gameId });
     }
   }, [socket]);
 
@@ -46,8 +39,7 @@ const usePuzzleSocket = () => {
   }, [socket]);
 
   return {
-    joinPuzzle,
-    leavePuzzle,
+    requestPuzzleState,
     movePiece,
     requestHint,
     resetPuzzle

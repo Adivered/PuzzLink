@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { getSocketInstance, setRoomUsers as setSocketRoomUsers, setOnlineUsers as setSocketOnlineUsers, addPendingInvitation, removePendingInvitation } from '../store/socketSlice';
-import store from '../store';
-import { addToast } from '../store/toastSlice';
+import { getSocketInstance, setRoomUsers as setSocketRoomUsers, setOnlineUsers as setSocketOnlineUsers, addPendingInvitation, removePendingInvitation, emitSocketEvent } from '../app/store/socketSlice';
+import store from '../app/store';
+import { addToast } from '../app/store/toastSlice';
 import { 
   addMessage, 
   setUserOnline, 
@@ -16,8 +16,11 @@ import {
   updateRoomFromSocket,
   removeRoomFromChat,
   markMessageAsSent,
-  setRoomDetails
-} from '../store/chatSlice';
+  setRoomDetails,
+  setActiveConversation,
+  setActiveRoom
+} from '../app/store/chatSlice';
+
 import { 
   addPlayerToRoom, 
   removePlayerFromRoom,
@@ -26,101 +29,167 @@ import {
   updatePlayersFromSocket,
   updateGameStateFromSocket,
   clearRoomData
-} from '../store/roomSlice';
-import { 
+} from '../app/store/roomSlice';
+
+import {
   setWhiteboardState,
   addStrokeToWhiteboard,
   removeStrokeFromWhiteboard,
   clearWhiteboard,
-  updateCollaboratorCursor,
   setPuzzleState,
   updatePuzzlePiece,
   updatePuzzleMoves,
   completePuzzle,
   resetPuzzle,
-  addPuzzlePlayer,
-  removePuzzlePlayer,
-  addHint
-} from '../store/gameSlice';
+  resetGame
+} from '../app/store/gameSlice';
 
 const useSocketEventHandlers = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const { isConnected } = useSelector((state) => state.socket);
+  const user = useSelector((state) => state.auth.user);
+  const homeConversationId = useSelector((state) => state.auth.homeConversationId);
+  
+  // Track processed events to prevent duplicates
+  const processedEvents = useRef(new Set());
+  const eventTimestamps = useRef(new Map());
+  const handlersRegistered = useRef(false);
 
-  // OPTIMIZATION: Track processed events to prevent duplicates
-  const processedEvents = useRef(new Map());
-  const eventDeduplicationWindow = 1000; // 1 second window
+  // Clear processed events when user changes
+  useEffect(() => {
+    processedEvents.current.clear();
+    eventTimestamps.current.clear();
+  }, [user?.id]);
 
   const isDuplicateEvent = (eventType, data) => {
-    const eventKey = `${eventType}_${data.roomId || data.chatId || data._id}`;
-    const now = Date.now();
-    
-    // Check if we've processed this event recently
-    const lastProcessed = processedEvents.current.get(eventKey);
-    if (lastProcessed && (now - lastProcessed) < eventDeduplicationWindow) {
-      console.log(`🔄 Skipping duplicate ${eventType} event`);
-      return true;
+    // Skip deduplication for rapid drawing events
+    if (eventType.includes('whiteboard_draw_move') || eventType.includes('whiteboard_draw_start')) {
+      return false;
     }
     
-    // Store the current timestamp
-    processedEvents.current.set(eventKey, now);
+    // Create a stable key by excluding timestamp which can vary slightly
+    const stableData = { ...data };
+    delete stableData.timestamp;
     
-    // OPTIMIZATION: Cleanup old entries periodically to prevent memory leaks
-    if (processedEvents.current.size > 100) {
-      const cutoffTime = now - eventDeduplicationWindow;
-      for (const [key, timestamp] of processedEvents.current.entries()) {
-        if (timestamp < cutoffTime) {
-          processedEvents.current.delete(key);
-        }
+    const eventKey = `${eventType}_${JSON.stringify(stableData)}`;
+    const now = Date.now();
+    
+    // More aggressive deduplication during development (hot reloading)
+    const debounceTime = process.env.NODE_ENV === 'development' ? 2000 : 1000; // 2 seconds in dev, 1 in prod
+    
+    // Check if we've seen this event recently
+    if (eventTimestamps.current.has(eventKey)) {
+      const lastTime = eventTimestamps.current.get(eventKey);
+      if (now - lastTime < debounceTime) {
+        console.log(`🔄 Duplicate event filtered: ${eventType} (${now - lastTime}ms ago)`);
+        return true;
+      }
+    }
+    
+    // Record this event
+    eventTimestamps.current.set(eventKey, now);
+    
+    // Clean up old events (older than 60 seconds)
+    for (const [key, timestamp] of eventTimestamps.current.entries()) {
+      if (now - timestamp > 60000) {
+        eventTimestamps.current.delete(key);
       }
     }
     
     return false;
   };
 
+  // ADD: Effect to handle navigation-based room leaving
   useEffect(() => {
-    const socket = getSocketInstance();
-    if (!socket) return;
+    // If user navigates away from room/game page, emit leave_room
+    const handleBeforeUnload = () => {
+      const socket = getSocketInstance();
+      if (socket && socket.connected && user?.currentRoom) {
+        // Emit leave room event when user navigates away or closes tab
+        socket.emit('leave_room', { roomId: user.currentRoom });
+      }
+    };
 
-    // Data initialization events (replace API calls)
+    // Listen for navigation changes and page unload
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [user?.currentRoom]);
+
+
+
+  useEffect(() => {
+    // Only set up event handlers when socket is connected and user is authenticated
+    if (!isConnected || !user || !homeConversationId || homeConversationId === 'pending') {
+      console.log('⏳ useSocketEventHandlers: Waiting for socket connection and valid user state', {
+        isConnected,
+        hasUser: !!user,
+        homeConversationId: homeConversationId?.slice?.(-8) || homeConversationId
+      });
+      return;
+    }
+
+    const socket = getSocketInstance();
+    if (!socket) {
+      console.log('⚠️ useSocketEventHandlers: Socket instance not available despite connected state');
+      return;
+    }
+
+    // Prevent duplicate handler registrations with stronger checking
+    const handlerKey = `${user?.id}_${socket.id}`;
+    if (handlersRegistered.current === handlerKey) {
+      console.log('⏳ useSocketEventHandlers: Handlers already registered for this user/socket, skipping...');
+      return;
+    }
+
+    // Clean up any existing handlers first
+    if (handlersRegistered.current) {
+      console.log('🧹 Cleaning up previous handlers before registering new ones');
+      socket.removeAllListeners();
+    }
+
+    console.log('🔌 Setting up socket event handlers, socket connected:', socket.connected);
+    handlersRegistered.current = handlerKey;
+
+    // Data initialization events
     const handleInitialData = (data) => {
-      const { conversations, roomDetails, messages, currentRoom } = data;
+      console.log('📦 Initial data received:', {
+        conversations: data.conversations?.length || 0,
+        rooms: data.rooms ? Object.keys(data.rooms).length : 0,
+        roomDetails: data.roomDetails ? Object.keys(data.roomDetails).length : 0,
+        messages: data.messages ? Object.keys(data.messages).length : 0,
+        currentRoom: data.currentRoom?.name || 'None',
+        rawDataKeys: Object.keys(data),
+        timestamp: new Date().toISOString()
+      });
       
-      // Initialize chat data first - this is separate from room data
+      const { conversations, rooms, roomDetails, messages } = data;
+      const finalRoomDetails = roomDetails || rooms;
+      
+      console.log('💾 Dispatching initializeChatData with:', {
+        conversations: (conversations || []).length,
+        roomDetails: Object.keys(finalRoomDetails || {}).length,
+        messages: Object.keys(messages || {}).length
+      });
       dispatch(initializeChatData({
         conversations: conversations || [],
-        roomDetails: roomDetails || {},
+        roomDetails: finalRoomDetails || {},
         messages: messages || {}
       }));
-
-      // Check if user is navigating to a specific room URL or game URL
+      console.log('✅ Chat data initialized');
+      
       const isNavigatingToRoom = window.location.pathname.startsWith('/rooms/');
       const isNavigatingToGame = window.location.pathname.startsWith('/game/');
       const targetRoomFromURL = isNavigatingToRoom ? window.location.pathname.split('/rooms/')[1] : null;
       
-      // Get user's home room ID to distinguish it from game rooms
-      const userHomeRoomId = store.getState?.()?.auth?.user?.homeRoomId;
-      
-      if (targetRoomFromURL && roomDetails && roomDetails[targetRoomFromURL]) {
-        // User is navigating to a specific room and we have data for it
-        const roomData = roomDetails[targetRoomFromURL];
-        
-        // Only initialize if it's NOT the home room (home room is chat-only)
-        if (roomData._id !== userHomeRoomId) {
-          dispatch(initializeRoomData(roomData));
-        } else {
-          // User is trying to access home room as game room - redirect to home
-          navigate('/');
-        }
+      if (targetRoomFromURL && finalRoomDetails && finalRoomDetails[targetRoomFromURL]) {
+        const roomData = finalRoomDetails[targetRoomFromURL];
+        dispatch(initializeRoomData(roomData));
       } else if (!isNavigatingToRoom && !isNavigatingToGame) {
-        // User is not on a room URL or game URL (probably on home page)
-        // Initialize room data as null since they're not trying to access a room
         dispatch(initializeRoomData(null));
-        
-        // Auto-navigate to their private room if they have one and it's not the home room
-        if (currentRoom && currentRoom._id !== userHomeRoomId) {
-          navigate(`/rooms/${currentRoom._id}`);
-        }
       }
     };
 
@@ -135,14 +204,10 @@ const useSocketEventHandlers = () => {
       dispatch(updateMessagesFromSocket({ chatId, messages }));
     };
 
-    // OPTIMIZED: Consolidated room data update handler with deduplication
     const handleRoomDataUpdate = (data) => {
       const { roomId, roomData } = data;
-      
-      // OPTIMIZATION: Prevent duplicate room data updates
       if (isDuplicateEvent('room_data_update', data)) return;
       
-      // Enhanced logging for debugging room name issues
       console.log('🏠 Room data update received:', {
         roomId: roomId?.slice?.(-8) || roomId,
         roomName: roomData?.name,
@@ -150,48 +215,29 @@ const useSocketEventHandlers = () => {
         roomDataKeys: roomData ? Object.keys(roomData) : []
       });
       
-      // Get user's home room ID to prevent home room from being treated as game room
-      const userHomeRoomId = store.getState?.()?.auth?.user?.homeRoomId;
-      
-      // OPTIMIZATION: Single dispatch with validated data
       if (roomData && roomData._id === roomId) {
-        // ALWAYS update chat room details first for proper chat display
         dispatch(setRoomDetails({ roomId, roomData }));
         console.log(`✅ Chat room details updated for ${roomData.name || roomId?.slice?.(-8)}`);
         
-        // Only update room slice if it's NOT the home room (home room is chat-only)
-        if (roomId !== userHomeRoomId) {
-          // Check if room data is not initialized yet (user navigated to room URL directly)
-          const currentRoomState = store.getState?.()?.room;
-          
-          if (!currentRoomState?.isInitialized) {
-            // First time getting room data - initialize it
-            console.log(`🏠 Initializing room data for ${roomData.name || roomId?.slice?.(-8)}`);
-            dispatch(initializeRoomData(roomData));
-          } else {
-            // Room already initialized - just update it
-            // OPTIMIZATION: Batch updates to prevent multiple re-renders
-            const batchedUpdates = () => {
-              // Update both chat and room slices in a coordinated way
-              dispatch(updateRoomFromSocket({ roomId, roomData }));
-              dispatch(updateRoomData(roomData));
-              
-              // OPTIMIZATION: Also ensure players are properly set with deduplication
-              if (roomData.players && Array.isArray(roomData.players)) {
-                const uniquePlayers = roomData.players.filter((player, index, array) => 
-                  player && player._id && array.findIndex(p => p._id === player._id) === index
-                );
-                dispatch(updatePlayersFromSocket(uniquePlayers));
-              }
-            };
-            
-            // Use setTimeout to batch updates and reduce render frequency
-            setTimeout(batchedUpdates, 0);
-          }
+        const currentRoomState = store.getState?.()?.room;
+        
+        if (!currentRoomState?.isInitialized) {
+          console.log(`🏠 Initializing room data for ${roomData.name || roomId?.slice?.(-8)}`);
+          dispatch(initializeRoomData(roomData));
         } else {
-          // This is home room data - only update chat slice, not room slice
-          console.log(`🏠 Updating Home room chat data`);
-          dispatch(updateRoomFromSocket({ roomId, roomData }));
+          const batchedUpdates = () => {
+            dispatch(updateRoomFromSocket({ roomId, roomData }));
+            dispatch(updateRoomData(roomData));
+            
+            if (roomData.players && Array.isArray(roomData.players)) {
+              const uniquePlayers = roomData.players.filter((player, index, array) => 
+                player && player._id && array.findIndex(p => p._id === player._id) === index
+              );
+              dispatch(updatePlayersFromSocket(uniquePlayers));
+            }
+          };
+          
+          setTimeout(batchedUpdates, 0);
         }
       } else {
         console.warn('⚠️ Invalid room data update:', { roomId, roomData });
@@ -202,7 +248,6 @@ const useSocketEventHandlers = () => {
     const handleMessageReceived = (data) => {
       dispatch(addMessage(data));
       
-      // If this is a response to an optimistic message, mark it as sent
       if (data.tempId) {
         dispatch(markMessageAsSent({
           tempId: data.tempId,
@@ -212,11 +257,11 @@ const useSocketEventHandlers = () => {
     };
 
     const handleMessageSent = (data) => {
-      // Mark optimistic message as sent
       if (data.tempId) {
+        const messageId = data.message?._id || data._id;
         dispatch(markMessageAsSent({
           tempId: data.tempId,
-          messageId: data._id
+          messageId: messageId
         }));
       }
     };
@@ -242,17 +287,15 @@ const useSocketEventHandlers = () => {
       dispatch(setSocketRoomUsers({ roomId, users }));
     };
 
-    // OPTIMIZED: Consolidated player events with deduplication
     const handlePlayerJoined = (data) => {
-      // OPTIMIZATION: Validate data structure first
+      if (isDuplicateEvent('player_joined', data)) return;
+      
       if (!data || !data.roomId) {
         console.warn('⚠️ Invalid player joined event - missing roomId');
         return;
       }
       
-      // OPTIMIZATION: Prefer full players list for consistency
       if (data.players && Array.isArray(data.players)) {
-        // Deduplicate and validate players
         const uniquePlayers = data.players.filter((player, index, array) => {
           if (!player || !player._id) {
             console.warn('⚠️ Invalid player data:', player);
@@ -271,7 +314,6 @@ const useSocketEventHandlers = () => {
     };
 
     const handlePlayerRemoved = (data) => {
-      // OPTIMIZATION: Prefer full players list for consistency
       if (data.players && Array.isArray(data.players)) {
         const uniquePlayers = data.players.filter((player, index, array) => 
           player && player._id && array.findIndex(p => p._id === player._id) === index
@@ -281,7 +323,6 @@ const useSocketEventHandlers = () => {
         dispatch(removePlayerFromRoom({ playerId: data.playerId }));
       }
       
-      // Show notification if someone else was removed
       const currentUser = store.getState?.()?.auth?.user;
       if (data.playerName && data.removedBy && currentUser?.name !== data.removedBy) {
         dispatch(addToast({
@@ -297,7 +338,7 @@ const useSocketEventHandlers = () => {
     };
 
     const handleGameStarting = (data) => {
-      console.log('🎮 Game starting countdown:', data);
+      console.log('🎮 Game starting countdown received by user:', user?.name, data);
       let countdown = data.countdown || 3;
       
       dispatch(updateGameStateFromSocket({
@@ -306,7 +347,6 @@ const useSocketEventHandlers = () => {
         roomId: data.roomId
       }));
 
-      // Start countdown timer
       const countdownInterval = setInterval(() => {
         countdown--;
         if (countdown > 0) {
@@ -322,16 +362,15 @@ const useSocketEventHandlers = () => {
     };
 
     const handleGameStarted = (data) => {
-      console.log('🎮 Game started:', data);
+      console.log('🎮 Game started received by user:', user?.name, data);
       dispatch(updateGameStateFromSocket({
         status: 'active',
         gameId: data.gameId,
         startedAt: new Date().toISOString()
       }));
 
-      // Navigate to the game page
       if (data.gameId) {
-        console.log('🚀 Navigating to game:', data.gameId);
+        console.log('🚀 Navigating user', user?.name, 'to game:', data.gameId);
         navigate(`/game/${data.gameId}`);
       }
     };
@@ -351,21 +390,27 @@ const useSocketEventHandlers = () => {
 
     // Room invitation events
     const handleRoomInvitation = (data) => {
-      console.log('Room invitation received:', data);
+      console.log('🔔 Room invitation received:', data);
+      console.log('🔔 Data structure:', {
+        roomId: data.roomId,
+        inviterName: data.inviterName,
+        timestamp: data.timestamp
+      });
       
-      // Add invitation to pending invitations in Redux store
       dispatch(addPendingInvitation({
         roomId: data.roomId,
         inviterName: data.inviterName,
         timestamp: data.timestamp
       }));
+      
+      console.log('🔔 Added pending invitation to Redux store');
     };
 
     const handleInvitationAccepted = (data) => {
+      if (isDuplicateEvent('invitation_accepted', data)) return;
+      
       console.log('Invitation accepted:', data);
       
-      // Remove the invitation from pending list for the inviter
-      // This helps clean up the UI for the person who sent the invitation
       dispatch(removePendingInvitation({
         roomId: data.roomId,
         inviterName: data.userName
@@ -378,18 +423,153 @@ const useSocketEventHandlers = () => {
     };
 
     const handleUserLeftRoom = (data) => {
-      console.log('User left room:', data);
+      console.log('👋 User left room:', data);
+      
+      if (data.roomId && data.userId) {
+        dispatch(removePlayerFromRoom({ 
+          playerId: data.userId 
+        }));
+      }
+      
+      // Only show toast for other users, and use global deduplication key
+      if (data.userId !== user?.id) {
+        const globalEventKey = `any_user_left_${data.userId}_${data.roomId}`;
+        if (!eventTimestamps.current.has(globalEventKey) || 
+            (Date.now() - eventTimestamps.current.get(globalEventKey)) > 5000) {
+          eventTimestamps.current.set(globalEventKey, Date.now());
+          dispatch(addToast({
+            message: `${data.userName || 'A player'} has left the room`,
+            type: 'info'
+          }));
+        }
+      }
     };
 
-    // Whiteboard event handlers
-    const handleWhiteboardStateSync = (data) => {
-      console.log('🔄 Whiteboard state sync received:', {
-        gameId: data.gameId,
-        strokeCount: data.strokes?.length || 0,
-        version: data.version,
-        collaboratorCount: data.collaborators?.length || 0
-      });
+    // CONSOLIDATED: Single handlePlayerLeftRoom function for game leave events
+    const handlePlayerLeftRoom = (data) => {
+      console.log('👋 Player left room (from game):', data);
       
+      if (data.userId === data.currentUserId) {
+        // Current user left - clean up all state
+        console.log('🧹 Current user left room, cleaning up state...');
+        
+        // Clear room state
+        dispatch(clearRoomData());
+        
+        // Clear game state 
+        dispatch(resetGame());
+        
+        // Clear room-specific chat data (but keep home conversation)
+        if (data.roomId) {
+          dispatch(removeRoomFromChat({ roomId: data.roomId }));
+        }
+        
+        // Reset chat to home conversation and clear all room-related chat state
+        const authState = store.getState?.()?.auth;
+        const homeConversationId = authState?.homeConversationId;
+        
+        // Clear active room first
+        dispatch(setActiveRoom(null));
+        
+        // Set home conversation if available
+        if (homeConversationId && homeConversationId !== 'pending') {
+          dispatch(setActiveConversation(homeConversationId));
+          // Join home conversation socket room
+          emitSocketEvent('join_conversation', homeConversationId);
+        }
+        
+        // Navigate to home
+        if (window.location.pathname !== '/') {
+          navigate('/');
+        }
+        
+        // Show toast to confirm leaving (but only once)
+        const leaveEventKey = `current_user_left_${data.roomId}`;
+        if (!eventTimestamps.current.has(leaveEventKey) || 
+            (Date.now() - eventTimestamps.current.get(leaveEventKey)) > 5000) {
+          eventTimestamps.current.set(leaveEventKey, Date.now());
+          dispatch(addToast({
+            message: 'You have left the room',
+            type: 'info'
+          }));
+        }
+      } else {
+        // Another player left - update room data and show toast
+        if (data.roomId && data.userId) {
+          dispatch(removePlayerFromRoom({
+            playerId: data.userId
+          }));
+        }
+        
+        // Use same global deduplication key as handleUserLeftRoom
+        const globalEventKey = `any_user_left_${data.userId}_${data.roomId}`;
+        if (!eventTimestamps.current.has(globalEventKey) || 
+            (Date.now() - eventTimestamps.current.get(globalEventKey)) > 5000) {
+          eventTimestamps.current.set(globalEventKey, Date.now());
+          dispatch(addToast({
+            message: 'A player has left the room',
+            type: 'info'
+          }));
+        }
+      }
+    };
+
+    // Room management events
+    const handleRoomClosed = (data) => {
+      console.log('🚪 Room closed:', data);
+      
+      const roomId = data.roomId;
+      
+      if (roomId) {
+        dispatch(removeRoomFromChat({ roomId }));
+        
+        const currentRoomState = store.getState?.()?.room?.data;
+        if (currentRoomState && currentRoomState._id === roomId) {
+          dispatch(clearRoomData());
+        }
+      }
+      
+      const message = data.reason === 'time_expired' 
+        ? 'Time limit exceeded! The room has been closed.' 
+        : 'The room has been closed.';
+      
+      if (window.location.pathname !== '/') {
+        navigate('/');
+      }
+      
+      dispatch(addToast({
+        message,
+        type: 'warning'
+      }));
+    };
+
+    const handleGameTimeExpired = (data) => {
+      console.log('⏰ Game time expired:', data);
+    };
+
+    // Whiteboard event handlers with deduplication
+    const handleWhiteboardStrokeAdded = (data) => {
+      // Use stroke ID for more reliable deduplication
+      const strokeKey = `stroke_${data.stroke?.id}`;
+      if (eventTimestamps.current.has(strokeKey)) {
+        const lastTime = eventTimestamps.current.get(strokeKey);
+        if (Date.now() - lastTime < 1000) { // 1 second deduplication
+          console.log(`🔄 Duplicate stroke filtered: ${data.stroke?.id}`);
+          return;
+        }
+      }
+      eventTimestamps.current.set(strokeKey, Date.now());
+      
+      console.log('🎨 Stroke added to whiteboard:', data);
+      if (data.stroke) {
+        dispatch(addStrokeToWhiteboard({ stroke: data.stroke }));
+        window.dispatchEvent(new CustomEvent('whiteboardStrokeAdded', { detail: data }));
+      }
+    };
+
+    const handleWhiteboardStateSync = (data) => {
+      if (isDuplicateEvent('whiteboard_state_sync', data)) return;
+      console.log('🎨 Whiteboard state sync received:', data);
       dispatch(setWhiteboardState({
         gameId: data.gameId,
         strokes: data.strokes || [],
@@ -398,101 +578,46 @@ const useSocketEventHandlers = () => {
         collaborators: data.collaborators || [],
         version: data.version
       }));
-      
-      // Dispatch custom event for whiteboard component
       window.dispatchEvent(new CustomEvent('whiteboardStateSync', { detail: data }));
     };
 
-    const handleWhiteboardStrokeAdded = (data) => {
-      if (!data.stroke || !data.stroke.id) {
-        console.error('❌ Invalid stroke data received:', data);
-        return;
-      }
-      
-      dispatch(addStrokeToWhiteboard({
-        gameId: data.gameId,
-        stroke: data.stroke
-      }));
-      
-      // Dispatch custom event for whiteboard component
-      window.dispatchEvent(new CustomEvent('whiteboardStrokeAdded', { detail: data }));
-    };
-
-    const handleWhiteboardDrawStart = (data) => {
-      // Dispatch custom event for whiteboard component  
-      window.dispatchEvent(new CustomEvent('whiteboardDrawStart', { detail: data }));
-    };
-
-    const handleWhiteboardDrawMove = (data) => {
-      // Dispatch custom event for whiteboard component
-      window.dispatchEvent(new CustomEvent('whiteboardDrawMove', { detail: data }));
-    };
-
     const handleWhiteboardCleared = (data) => {
-      console.log('🧹 Whiteboard cleared:', {
-        gameId: data.gameId,
-        clearedBy: data.clearedBy,
-        clearAll: data.clearAll,
-        version: data.version
-      });
-      
-      dispatch(clearWhiteboard({ gameId: data.gameId }));
-      
-      // Dispatch custom event for whiteboard component
+      if (isDuplicateEvent('whiteboard_cleared', data)) return;
+      console.log('🎨 Whiteboard cleared:', data);
+      dispatch(clearWhiteboard());
       window.dispatchEvent(new CustomEvent('whiteboardCleared', { detail: data }));
     };
 
     const handleWhiteboardUndo = (data) => {
-      console.log('↩️ Whiteboard undo:', {
-        gameId: data.gameId,
-        strokeId: data.strokeId,
-        undoneBy: data.undoneBy,
-        version: data.version
-      });
-      
-      dispatch(removeStrokeFromWhiteboard({
-        gameId: data.gameId,
-        strokeId: data.strokeId
-      }));
-      
-      // Dispatch custom event for whiteboard component
-      window.dispatchEvent(new CustomEvent('whiteboardUndo', { detail: data }));
+      if (isDuplicateEvent('whiteboard_undo', data)) return;
+      console.log('🎨 Whiteboard undo:', data);
+      if (data.strokeId) {
+        dispatch(removeStrokeFromWhiteboard({ strokeId: data.strokeId }));
+        window.dispatchEvent(new CustomEvent('whiteboardUndo', { detail: data }));
+      }
     };
 
-    const handleWhiteboardUserCursor = (data) => {
-      dispatch(updateCollaboratorCursor({
-        gameId: data.gameId,
-        userId: data.userId,
-        cursor: { x: data.x, y: data.y, visible: data.visible }
-      }));
-      
-      // Dispatch custom event for whiteboard component
-      window.dispatchEvent(new CustomEvent('whiteboardUserCursor', { detail: data }));
+    const handleWhiteboardDrawStart = (data) => {
+      if (isDuplicateEvent('whiteboard_draw_start', data)) return;
+      window.dispatchEvent(new CustomEvent('whiteboardDrawStart', { detail: data }));
+    };
+
+    const handleWhiteboardDrawMove = (data) => {
+      if (isDuplicateEvent('whiteboard_draw_move', data)) return;
+      window.dispatchEvent(new CustomEvent('whiteboardDrawMove', { detail: data }));
     };
 
     const handleWhiteboardToolChange = (data) => {
-      // Dispatch custom event for whiteboard component
+      if (isDuplicateEvent('whiteboard_tool_change', data)) return;
       window.dispatchEvent(new CustomEvent('whiteboardToolChange', { detail: data }));
     };
 
     // Puzzle event handlers
     const handlePuzzleStateSync = (data) => {
-      console.log('🧩 Puzzle state sync received:', {
-        gameId: data.gameId,
-        piecesCount: data.puzzle?.pieces?.length || 0,
-        moves: data.moves,
-        isCompleted: data.puzzle?.isCompleted
-      });
-      
-      // Defensive check: if there are pieces without positions, the puzzle shouldn't be completed
-      const piecesInBank = data.puzzle?.pieces?.filter(p => !p.currentPosition) || [];
-      const shouldMarkAsCompleted = data.puzzle?.isCompleted && piecesInBank.length === 0;
-      
+      if (isDuplicateEvent('puzzle_state_sync', data)) return;
+      console.log('🧩 Puzzle state sync received:', data);
       dispatch(setPuzzleState({
-        puzzle: {
-          ...data.puzzle,
-          isCompleted: shouldMarkAsCompleted
-        },
+        puzzle: data.puzzle,
         moves: data.moves,
         startTime: data.startTime,
         endTime: data.endTime
@@ -500,146 +625,61 @@ const useSocketEventHandlers = () => {
     };
 
     const handlePieceMoved = (data) => {
-      console.log('🧩 Piece moved event received:', {
-        pieceId: data.pieceId,
-        fromPosition: data.fromPosition,
-        toPosition: data.toPosition,
-        movedBy: data.movedBy,
-        isCorrectlyPlaced: data.isCorrectlyPlaced
-      });
-      
+      if (isDuplicateEvent('piece_moved', data)) return;
+      console.log('🧩 Piece moved:', data);
       dispatch(updatePuzzlePiece({
         pieceId: data.pieceId,
-        fromPosition: data.fromPosition,
         toPosition: data.toPosition,
-        isCorrectlyPlaced: data.isCorrectlyPlaced,
-        movedBy: data.movedBy
+        isCorrectlyPlaced: data.isCorrectlyPlaced
       }));
-      
-      if (data.totalMoves !== undefined) {
+      if (data.totalMoves) {
         dispatch(updatePuzzleMoves(data.totalMoves));
       }
     };
 
     const handlePuzzleCompleted = (data) => {
-      console.log('🎉 Puzzle completed!', {
-        gameId: data.gameId,
-        completedBy: data.completedBy,
-        totalMoves: data.totalMoves,
-        duration: data.duration
-      });
-      
+      if (isDuplicateEvent('puzzle_completed', data)) return;
+      console.log('🎉 Puzzle completed:', data);
       dispatch(completePuzzle({
-        completedAt: data.completedAt,
-        completedBy: data.completedBy
+        completedAt: data.completedAt
       }));
-      
-      if (data.totalMoves !== undefined) {
-        dispatch(updatePuzzleMoves(data.totalMoves));
-      }
+      dispatch(addToast({
+        message: '🎉 Puzzle completed! Congratulations!',
+        type: 'success'
+      }));
     };
 
     const handlePuzzleReset = (data) => {
-      console.log('🔄 Puzzle reset:', {
-        gameId: data.gameId,
-        resetBy: data.resetBy
-      });
-      
+      if (isDuplicateEvent('puzzle_reset', data)) return;
+      console.log('🔄 Puzzle reset:', data);
       dispatch(resetPuzzle({
         newStartTime: data.newStartTime
       }));
-    };
-
-    const handlePlayerJoinedPuzzle = (data) => {
-      console.log('👤 Player joined puzzle:', data);
-      dispatch(addPuzzlePlayer({ userId: data.userId }));
-    };
-
-    const handlePlayerLeftPuzzle = (data) => {
-      console.log('👋 Player left puzzle:', data);
-      dispatch(removePuzzlePlayer({ userId: data.userId }));
-    };
-
-    const handleHintProvided = (data) => {
-      console.log('💡 Hint provided:', data);
-      dispatch(addHint({
-        pieceId: data.pieceId,
-        correctPosition: data.correctPosition,
-        currentPosition: data.currentPosition
-      }));
-    };
-
-    const handleHintUsed = (data) => {
-      console.log('💡 Hint used by:', data.usedBy);
-    };
-
-    const handlePuzzleError = (data) => {
-      console.error('🧩 Puzzle error:', data);
-    };
-
-    // Room management events
-    const handleRoomClosed = (data) => {
-      console.log('🚪 Room closed:', data);
-      
-      // Get the room ID from the data
-      const roomId = data.roomId;
-      
-      // Clean up room state from both reducers
-      if (roomId) {
-        // Remove room from chat reducer (room list, messages, etc.)
-        dispatch(removeRoomFromChat({ roomId }));
-        
-        // Clear room data from room reducer if it's the current room
-        const currentRoomState = store.getState?.()?.room?.data;
-        if (currentRoomState && currentRoomState._id === roomId) {
-          dispatch(clearRoomData());
-        }
-      }
-      
-      // Show notification and navigate to home
-      const message = data.reason === 'time_expired' 
-        ? 'Time limit exceeded! The room has been closed.' 
-        : 'The room has been closed.';
-      
-      // Navigate to home page
-      navigate('/');
-      
-      // Show toast notification using the existing toast system
       dispatch(addToast({
-        message,
-        type: 'warning'
+        message: '🔄 Puzzle has been reset!',
+        type: 'info'
       }));
-    };
-
-    const handlePlayerLeftRoom = (data) => {
-      console.log('👋 Player left room:', data);
-      if (data.userId === data.currentUserId) {
-        // Current user left, navigate to home
-        navigate('/');
-      } else {
-        // Show notification that another player left
-        dispatch(addToast({
-          message: 'A player has left the room',
-          type: 'info'
-        }));
-      }
-    };
-
-    const handleGameTimeExpired = (data) => {
-      console.log('⏰ Game time expired:', data);
-      // This will be followed by room_closed event
     };
 
     // Error handling
     const handleError = (data) => {
       console.error('❌ Socket error received:', data);
       
-      // If it's a stroke-related error, dispatch event for whiteboard to handle
       if (data.strokeId) {
         window.dispatchEvent(new CustomEvent('whiteboardError', { detail: data }));
       }
     };
 
+    // Add catch-all listener for debugging (disabled in development due to hot reloading)
+    // socket.onAny((eventName, ...args) => {
+    //   if (eventName.includes('invitation')) {
+    //     console.log('🔔 SOCKET EVENT RECEIVED:', eventName, ...args);
+    //   }
+    //   if (eventName.includes('game_')) {
+    //     console.log(`🎯 ${user?.name} received:`, eventName, ...args);
+    //   }
+    // });
+    
     // Register all event listeners
     socket.on('initial_data', handleInitialData);
     socket.on('conversations_update', handleConversationsUpdate);
@@ -661,38 +701,27 @@ const useSocketEventHandlers = () => {
     socket.on('invitation_accepted', handleInvitationAccepted);
     socket.on('user_joined_room', handleUserJoinedRoom);
     socket.on('user_left_room', handleUserLeftRoom);
-    
-    // Whiteboard events
-    socket.on('whiteboard_state_sync', handleWhiteboardStateSync);
+    socket.on('player_left_room', handlePlayerLeftRoom);
+    socket.on('room_closed', handleRoomClosed);
+    socket.on('game_time_expired', handleGameTimeExpired);
     socket.on('whiteboard_stroke_added', handleWhiteboardStrokeAdded);
-    socket.on('whiteboard_draw_start', handleWhiteboardDrawStart);
-    socket.on('whiteboard_draw_move', handleWhiteboardDrawMove);
+    socket.on('whiteboard_state_sync', handleWhiteboardStateSync);
     socket.on('whiteboard_cleared', handleWhiteboardCleared);
     socket.on('whiteboard_undo', handleWhiteboardUndo);
-    socket.on('whiteboard_user_cursor', handleWhiteboardUserCursor);
+    socket.on('whiteboard_draw_start', handleWhiteboardDrawStart);
+    socket.on('whiteboard_draw_move', handleWhiteboardDrawMove);
     socket.on('whiteboard_tool_change', handleWhiteboardToolChange);
-
-    // Puzzle events
     socket.on('puzzle_state_sync', handlePuzzleStateSync);
     socket.on('piece_moved', handlePieceMoved);
     socket.on('puzzle_completed', handlePuzzleCompleted);
     socket.on('puzzle_reset', handlePuzzleReset);
-    socket.on('player_joined_puzzle', handlePlayerJoinedPuzzle);
-    socket.on('player_left_puzzle', handlePlayerLeftPuzzle);
-    socket.on('hint_provided', handleHintProvided);
-    socket.on('hint_used', handleHintUsed);
-    socket.on('puzzle_error', handlePuzzleError);
-
-    // Room management events
-    socket.on('room_closed', handleRoomClosed);
-    socket.on('player_left_room', handlePlayerLeftRoom);
-    socket.on('game_time_expired', handleGameTimeExpired);
-
-    // Error handling
     socket.on('error', handleError);
 
     // Cleanup function
     return () => {
+      console.log('🧹 Cleaning up socket event handlers');
+      handlersRegistered.current = false;
+      
       socket.off('initial_data', handleInitialData);
       socket.off('conversations_update', handleConversationsUpdate);
       socket.off('messages_update', handleMessagesUpdate);
@@ -713,37 +742,26 @@ const useSocketEventHandlers = () => {
       socket.off('invitation_accepted', handleInvitationAccepted);
       socket.off('user_joined_room', handleUserJoinedRoom);
       socket.off('user_left_room', handleUserLeftRoom);
-      
-      // Whiteboard events
-      socket.off('whiteboard_state_sync', handleWhiteboardStateSync);
+      socket.off('player_left_room', handlePlayerLeftRoom);
+      socket.off('room_closed', handleRoomClosed);
+      socket.off('game_time_expired', handleGameTimeExpired);
       socket.off('whiteboard_stroke_added', handleWhiteboardStrokeAdded);
-      socket.off('whiteboard_draw_start', handleWhiteboardDrawStart);
-      socket.off('whiteboard_draw_move', handleWhiteboardDrawMove);
+      socket.off('whiteboard_state_sync', handleWhiteboardStateSync);
       socket.off('whiteboard_cleared', handleWhiteboardCleared);
       socket.off('whiteboard_undo', handleWhiteboardUndo);
-      socket.off('whiteboard_user_cursor', handleWhiteboardUserCursor);
+      socket.off('whiteboard_draw_start', handleWhiteboardDrawStart);
+      socket.off('whiteboard_draw_move', handleWhiteboardDrawMove);
       socket.off('whiteboard_tool_change', handleWhiteboardToolChange);
-
-      // Puzzle events
       socket.off('puzzle_state_sync', handlePuzzleStateSync);
       socket.off('piece_moved', handlePieceMoved);
       socket.off('puzzle_completed', handlePuzzleCompleted);
       socket.off('puzzle_reset', handlePuzzleReset);
-      socket.off('player_joined_puzzle', handlePlayerJoinedPuzzle);
-      socket.off('player_left_puzzle', handlePlayerLeftPuzzle);
-      socket.off('hint_provided', handleHintProvided);
-      socket.off('hint_used', handleHintUsed);
-      socket.off('puzzle_error', handlePuzzleError);
-
-      // Room management events
-      socket.off('room_closed', handleRoomClosed);
-      socket.off('player_left_room', handlePlayerLeftRoom);
-      socket.off('game_time_expired', handleGameTimeExpired);
-
-      // Error handling
       socket.off('error', handleError);
     };
-  }, [dispatch, navigate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps  
+  }, [dispatch, navigate, isConnected]);
 };
 
 export default useSocketEventHandlers; 
+
+

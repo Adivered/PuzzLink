@@ -45,9 +45,7 @@ export const SOCKET_EVENTS = {
   GET_ROOM_USERS: 'get_room_users',
   ROOM_USERS: 'room_users',
 
-  // Game events
-  JOIN_GAME: 'join_game',
-  LEAVE_GAME: 'leave_game',
+  // Game events (join/leave handled via room events)
   PLAYER_JOINED_GAME: 'player_joined_game',
   PLAYER_LEFT_GAME: 'player_left_game',
   PIECE_MOVED: 'piece_moved',
@@ -59,9 +57,7 @@ export const SOCKET_EVENTS = {
   CURSOR_POSITION: 'cursor_position',
   PLAYER_CURSOR: 'player_cursor',
 
-  // Whiteboard events
-  WHITEBOARD_JOIN: 'whiteboard_join',
-  WHITEBOARD_LEAVE: 'whiteboard_leave',
+  // Whiteboard events (join/leave handled via room events)
   WHITEBOARD_DRAW_START: 'whiteboard_draw_start',
   WHITEBOARD_DRAW_MOVE: 'whiteboard_draw_move',
   WHITEBOARD_DRAW_END: 'whiteboard_draw_end',
@@ -74,9 +70,7 @@ export const SOCKET_EVENTS = {
   WHITEBOARD_STROKE_REMOVED: 'whiteboard_stroke_removed',
   WHITEBOARD_ERROR: 'whiteboard_error',
 
-  // Puzzle events
-  PUZZLE_JOIN: 'puzzle_join',
-  PUZZLE_LEAVE: 'puzzle_leave',
+  // Puzzle events (join/leave handled via room events)
   PUZZLE_MOVE_PIECE: 'puzzle_move_piece',
   PUZZLE_PIECE_MOVED: 'puzzle_piece_moved',
   PUZZLE_STATE_SYNC: 'puzzle_state_sync',
@@ -87,11 +81,9 @@ export const SOCKET_EVENTS = {
   PUZZLE_ERROR: 'puzzle_error'
 };
 
-// Room name generators
+// Room name generators (no sub-rooms needed since everything is in main room)
 export const ROOM_NAMES = {
   USER: (userId) => `user_${userId}`,
   CONVERSATION: (conversationId) => `conversation_${conversationId}`,
   ROOM: (roomId) => `room_${roomId}`,
-  GAME: (gameId) => `game_${gameId}`,
-  GAME_SPECTATORS: (gameId) => `game_${gameId}_spectators`,
 }; 

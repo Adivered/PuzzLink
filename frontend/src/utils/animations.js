@@ -3,7 +3,6 @@ import { gsap } from 'gsap';
 // Performance-optimized animation utilities
 const defaultConfig = {
   ease: "power2.out", // Smooth, natural easing
-  force3D: true,      // Force hardware acceleration
 };
 
 export const fadeOut = (elements, options = {}) => {
@@ -12,7 +11,6 @@ export const fadeOut = (elements, options = {}) => {
     duration: options.duration || 0.6, // Slightly faster for better UX
     stagger: options.stagger || 0.1,   // Reduced stagger for quicker completion
     ease: options.ease || defaultConfig.ease,
-    force3D: defaultConfig.force3D,
     onComplete: options.onComplete
   });
 }

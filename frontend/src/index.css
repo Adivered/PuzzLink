@@ -139,6 +139,24 @@ body {
   font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
+  background-color: #ffffff;
+  transition: background-color 0.3s ease;
+}
+
+/* Prevent flash during auth state changes */
+[data-theme="dark"] body {
+  background-color: #111827;
+}
+
+/* Prevent flash during page transitions and auth state changes */
+body {
+  min-height: 100vh;
+  background-color: #ffffff;
+  transition: background-color 0.3s ease;
+}
+
+[data-theme="dark"] body {
+  background-color: #111827;
 }
 
 /* Reduce motion for users who prefer it */
@@ -183,3 +201,71 @@ code {
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
 }
+
+/* GSAP Animation Initial States - Prevent Flash */
+[data-animate="feature"]:not(.gsap-animated) {
+  opacity: 0 !important;
+  transform: translateY(50px) scale(0.9) !important;
+}
+
+[data-animate="hero-title"]:not(.gsap-animated) {
+  opacity: 0 !important;
+  transform: translateY(-50px) scale(0.9) !important;
+}
+
+[data-animate="hero-subtitle"]:not(.gsap-animated) {
+  opacity: 0 !important;
+  transform: translateY(30px) !important;
+}
+
+[data-animate="hero-button"]:not(.gsap-animated) {
+  opacity: 0 !important;
+  transform: translateY(30px) scale(0.9) !important;
+}
+
+[data-animate="hero-feature"]:not(.gsap-animated) {
+  opacity: 0 !important;
+  transform: translateY(30px) scale(0.9) !important;
+}
+
+[data-animate="testimonial"]:not(.gsap-animated) {
+  opacity: 0 !important;
+  transform: scale(0.95) !important;
+}
+
+[data-animate="pricing"]:not(.gsap-animated) {
+  opacity: 0 !important;
+  transform: translateY(30px) scale(0.95) !important;
+}
+
+[data-animate="faq"]:not(.gsap-animated) {
+  opacity: 0 !important;
+  transform: translateX(-20px) !important;
+}
+
+[data-animate="cta"]:not(.gsap-animated) {
+  opacity: 0 !important;
+  transform: translateY(20px) !important;
+}
+
+[data-animate="section-header"]:not(.gsap-animated) {
+  opacity: 0 !important;
+  transform: translateY(20px) !important;
+}
+
+/* Ensure animated elements are visible */
+[data-animate].gsap-animated {
+  opacity: 1 !important;
+}
+
+/* Feature cards enhanced styling for hover effects */
+[data-animate="feature"].gsap-animated {
+  transition: box-shadow 0.3s ease;
+  cursor: pointer;
+}
+
+[data-animate="feature"].gsap-animated:hover {
+  transform-origin: center center;
+}
+
+/* Hero section - let GSAP handle all animations */
