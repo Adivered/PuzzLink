@@ -1,108 +1,112 @@
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { fadeInUp, fadeInScale } from '../../utils/animations';
 import useIsomorphicLayoutEffect from '../useIsomorphicLayoutEffect';
-gsap.registerPlugin(ScrollTrigger);
+
+// Import animation functions from external files
+import {
+  animateFeatureElement, animateFeatureHeader,
+  animateTestimonialElement, animateTestimonialHeader,
+  animatePricingElement, animatePricingHeader,
+  animateFAQElement, animateFAQHeader,
+  animateCTAElement, animateCTAHeader
+} from '../../animations/sections';
 
 const useSectionAnimations = () => {
   useIsomorphicLayoutEffect(() => {
-    // Optimize scroll trigger settings for better performance
-    ScrollTrigger.defaults({
-      start: 'top 90%',
-      end: 'bottom 10%',
-      toggleActions: 'play none none reverse',
-      // Add performance optimizations
-      refreshPriority: -1,
-      fastScrollEnd: true
+    // Register ScrollTrigger plugin
+    gsap.registerPlugin(ScrollTrigger);
+    
+    // Performance optimizations
+    gsap.config({ 
+      force3D: true,
+      autoSleep: 60,
+      nullTargetWarn: false
     });
 
-    // Batch animations for better performance
-    const animationBatches = [
-      {
-        selector: '[data-animate="feature"]',
-        animation: (elements) => fadeInUp(elements, { stagger: 0.1, duration: 0.6 })
-      },
-      {
-        selector: '[data-animate="testimonial"]',
-        animation: (elements) => fadeInScale(elements, { stagger: 0.15, duration: 0.5 })
-      },
-      {
-        selector: '[data-animate="pricing"]',
-        animation: (elements) => {
-          gsap.fromTo(elements, 
-            { opacity: 0, y: 30, scale: 0.95 },
-            { 
-              opacity: 1, 
-              y: 0, 
-              scale: 1, 
-              duration: 0.6, 
-              stagger: 0.1,
-              ease: "power2.out"
-            }
-          );
-        }
-      },
-      {
-        selector: '[data-animate="faq"]',
-        animation: (elements) => {
-          gsap.fromTo(elements,
-            { opacity: 0, x: -20 },
-            { 
-              opacity: 1, 
-              x: 0, 
-              duration: 0.5, 
-              stagger: 0.08,
-              ease: "power2.out"
-            }
-          );
-        }
-      },
-      {
-        selector: '[data-animate="cta"]',
-        animation: (elements) => {
-          gsap.fromTo(elements,
-            { opacity: 0, y: 20 },
-            { 
-              opacity: 1, 
-              y: 0, 
-              duration: 0.6,
-              stagger: 0.08,
-              ease: "power2.out"
-            }
-          );
-        }
-      },
-      {
-        selector: '[data-animate="section-header"]',
-        animation: (elements) => {
-          elements.forEach(element => {
-            gsap.fromTo(element,
-              { opacity: 0, y: 20 },
-              { 
-                opacity: 1, 
-                y: 0, 
-                duration: 0.6,
-                ease: "power2.out"
-              }
-            );
-          });
+    // Animation mapping using external animation functions
+    const animationMapping = {
+      'feature': animateFeatureElement,
+      'testimonial': animateTestimonialElement,
+      'pricing': animatePricingElement,
+      'faq': animateFAQElement,
+      'cta': animateCTAElement,
+      'section-header': (element, index) => {
+        // Determine which header animation to use based on parent section
+        const section = element.closest('section');
+        if (!section) return animateFeatureHeader(element, index);
+        
+        const sectionId = section.id;
+        switch (sectionId) {
+          case 'features':
+            return animateFeatureHeader(element, index);
+          case 'testimonials':
+            return animateTestimonialHeader(element, index);
+          case 'pricing':
+            return animatePricingHeader(element, index);
+          case 'faq':
+            return animateFAQHeader(element, index);
+          case 'cta':
+            return animateCTAHeader(element, index);
+          default:
+            return animateFeatureHeader(element, index);
         }
       }
-    ];
+    };
 
-    // Create scroll triggers for each batch
-    animationBatches.forEach(({ selector, animation }) => {
-      ScrollTrigger.batch(selector, {
-        onEnter: animation,
-        once: true,
-        // Add performance optimizations
-        refreshPriority: -1
+    // Create scroll triggers for each animation type
+    const triggers = [];
+    
+    // Create a single function to handle all animations
+    const createTriggers = () => {
+      Object.keys(animationMapping).forEach(animationType => {
+        const selector = `[data-animate="${animationType}"]`;
+        const elements = document.querySelectorAll(selector);
+        if (elements.length === 0) return;
+
+        // Create individual triggers for better reliability
+        elements.forEach((element, index) => {
+          const trigger = ScrollTrigger.create({
+            trigger: element,
+            start: "top bottom-=100px",
+            once: true,
+            onEnter: () => {
+              // Use the appropriate animation function from external files
+              const animationFunction = animationMapping[animationType];
+              animationFunction(element, index);
+            }
+          });
+          triggers.push(trigger);
+        });
       });
-    });
+    };
 
-    // Cleanup function
+    // Create triggers after a short delay to ensure DOM is ready
+    setTimeout(createTriggers, 100);
+
+    // Also create triggers immediately in case elements are already available
+    createTriggers();
+
+    // Cleanup function - more thorough cleanup
     return () => {
+      // Kill all triggers
+      triggers.forEach(trigger => {
+        if (trigger && typeof trigger.kill === 'function') {
+          trigger.kill();
+        }
+      });
+      
+      // Kill all ScrollTriggers
       ScrollTrigger.getAll().forEach(trigger => trigger.kill());
+      
+      // Reset will-change on all animated elements
+      Object.keys(animationMapping).forEach(animationType => {
+        const selector = `[data-animate="${animationType}"]`;
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(el => el.style.willChange = 'auto');
+      });
+      
+      // Clear any remaining GSAP tweens
+      gsap.killTweensOf("*");
     };
   }, []);
 };

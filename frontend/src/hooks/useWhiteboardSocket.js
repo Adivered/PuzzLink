@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useSelector } from 'react-redux';
-import { emitSocketEvent } from '../store/socketSlice';
+import { emitSocketEvent } from '../app/store/socketSlice';
 
 const useWhiteboardSocket = (gameId, callbacks = {}) => {
   const { isConnected } = useSelector((state) => state.socket);
@@ -118,7 +118,8 @@ const useWhiteboardSocket = (gameId, callbacks = {}) => {
   }, [gameId]);
 
   const requestGameState = useCallback(() => {
-    emitSocketEvent('join_game', gameId);
+    // Since user is already in room context, just request whiteboard state sync
+    emitSocketEvent('request_game_state', { gameId });
   }, [gameId]);
 
   return {

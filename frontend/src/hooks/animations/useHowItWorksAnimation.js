@@ -11,15 +11,38 @@ const useHowItWorksAnimation = (containerRef) => {
 
     let currentStep = 0;
     let animationTimeline;
+    let nextStepTimeout;
+
+    // Performance optimizations
+    gsap.config({ 
+      force3D: true,
+      autoSleep: 60 
+    });
+
+    // Set will-change for better performance
+    steps.forEach(step => {
+      step.style.willChange = 'transform, opacity';
+    });
 
     // Initially hide all steps except the first
-    gsap.set(steps, { opacity: 0, x: 100, scale: 0.8 });
-    gsap.set(steps[0], { opacity: 1, x: 0, scale: 1 });
-
-
+    gsap.set(steps, { 
+      opacity: 0, 
+      x: 100, 
+      scale: 0.8,
+      force3D: true 
+    });
+    gsap.set(steps[0], { 
+      opacity: 1, 
+      x: 0, 
+      scale: 1,
+      force3D: true 
+    });
 
     const showStep = (stepIndex) => {
-      if (animationTimeline) animationTimeline.kill();
+      if (animationTimeline) {
+        animationTimeline.kill();
+        animationTimeline = null;
+      }
       
       animationTimeline = gsap.timeline();
 
@@ -30,7 +53,8 @@ const useHowItWorksAnimation = (containerRef) => {
           x: -100,
           scale: 0.8,
           duration: 0.4,
-          ease: "power2.in"
+          ease: "power2.in",
+          force3D: true
         });
       }
 
@@ -47,6 +71,7 @@ const useHowItWorksAnimation = (containerRef) => {
           scale: 1,
           duration: 0.6,
           ease: "power2.out",
+          force3D: true,
           onComplete: () => {
             currentStep = stepIndex;
           }
@@ -61,18 +86,31 @@ const useHowItWorksAnimation = (containerRef) => {
       
       // Schedule next transition (longer pause on first step)
       const delay = nextIndex === 0 ? 4 : 3;
-      gsap.delayedCall(delay, nextStep);
+      nextStepTimeout = setTimeout(nextStep, delay * 1000);
     };
 
     // Start the slideshow after initial delay
-    const startDelay = gsap.delayedCall(3, nextStep);
+    const startTimeout = setTimeout(nextStep, 3000);
 
-    // Cleanup function
+    // Enhanced cleanup function
     return () => {
-      if (animationTimeline) animationTimeline.kill();
-      gsap.killTweensOf(nextStep);
-      startDelay.kill();
+      // Clear timeouts
+      if (startTimeout) clearTimeout(startTimeout);
+      if (nextStepTimeout) clearTimeout(nextStepTimeout);
+      
+      // Kill animation timeline
+      if (animationTimeline) {
+        animationTimeline.kill();
+        animationTimeline = null;
+      }
+      
+      // Kill all GSAP tweens on steps
       gsap.killTweensOf(steps);
+      
+      // Reset will-change
+      steps.forEach(step => {
+        step.style.willChange = 'auto';
+      });
     };
   }, [containerRef]);
 };

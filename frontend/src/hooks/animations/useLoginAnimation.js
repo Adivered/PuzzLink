@@ -10,7 +10,9 @@ const useLoginAnimation = () => {
   const inputsRef = useRef([]);
 
   useIsomorphicLayoutEffect(() => {
-    inputsRef.current = inputsRef.current.slice(0, 2);
+    if (Array.isArray(inputsRef.current)) {
+      inputsRef.current = inputsRef.current.slice(0, 2);
+    }
   }, []);
 
   useIsomorphicLayoutEffect(() => {
@@ -31,7 +33,7 @@ const useLoginAnimation = () => {
         scaleX: 0,
         duration: 0.5
       }, "-=0.2")
-      .from(inputsRef.current, {
+      .from(inputsRef.current.filter(Boolean), {
         y: 20,
         opacity: 0,
         stagger: 0.2,

@@ -1,14 +1,14 @@
 import { useCallback, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
-import { setActiveRoom, openChat, setRoomDetails } from '../store/chatSlice';
-import { switchToRoom as switchToRoomAction } from '../store/roomSlice';
+import { setActiveRoom, setActiveConversation, openChat, setRoomDetails } from '../app/store/chatSlice';
+import { switchToRoom as switchToRoomAction } from '../app/store/roomSlice';
 
 const useRoomChat = () => {
   const dispatch = useDispatch();
   const { roomId, gameId } = useParams();
   const user = useSelector((state) => state.auth.user);
-  const { activeRoom, roomDetails } = useSelector((state) => state.chat);
+  const { activeRoom, activeConversation, roomDetails } = useSelector((state) => state.chat);
   const room = useSelector((state) => state.room.data);
 
   // Get the current room ID from either roomId or gameId params
@@ -53,18 +53,22 @@ const useRoomChat = () => {
     }
   };
 
+  const homeConversationId = useSelector((state) => state.auth.homeConversationId);
+
   const openHomeChat = () => {
-    if (user?.homeRoomId) {
-      switchToRoomHandler(user.homeRoomId);
+    if (homeConversationId) {
+      // Home is now a conversation, not a room
+      dispatch(setActiveConversation(homeConversationId));
+      dispatch(openChat());
     }
   };
 
   return {
     currentRoomId,
-    homeRoomId: user?.homeRoomId,
+    homeConversationId,
     isInRoom: !!currentRoomId,
     isActiveRoom: activeRoom === currentRoomId,
-    isHomeActive: activeRoom === user?.homeRoomId,
+    isHomeActive: activeConversation === homeConversationId,
     openRoomChat,
     openHomeChat,
     switchToRoom: switchToRoomHandler
