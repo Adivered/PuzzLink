@@ -202,17 +202,9 @@ const whiteboardHandler = (socket, io) => {
     const roomSockets = await io.in(whiteboardRoom).fetchSockets();
     console.log(`📡 Broadcasting draw start to ${roomSockets.length} sockets`);
     
-    // AGGRESSIVELY broadcast to ALL users in BOTH rooms
-    io.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_DRAW_START, broadcastData);
-    io.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_DRAW_START, broadcastData);
-    
-    // Also emit to sender as fallback
-    socket.emit(SOCKET_EVENTS.WHITEBOARD_DRAW_START, broadcastData);
-    
-    // Direct emit to each socket as additional fallback
-    roomSockets.forEach(s => {
-      s.emit(SOCKET_EVENTS.WHITEBOARD_DRAW_START, broadcastData);
-    });
+    // Broadcast draw start to OTHER users only (exclude sender to prevent ping-pong)
+    socket.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_DRAW_START, broadcastData);
+    socket.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_DRAW_START, broadcastData);
   });
 
   // Handle drawing movement
@@ -228,12 +220,9 @@ const whiteboardHandler = (socket, io) => {
       timestamp: new Date()
     };
     
-    // AGGRESSIVELY broadcast to ALL users in BOTH rooms
-    io.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_DRAW_MOVE, broadcastData);
-    io.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_DRAW_MOVE, broadcastData);
-    
-    // Also emit to sender as fallback
-    socket.emit(SOCKET_EVENTS.WHITEBOARD_DRAW_MOVE, broadcastData);
+    // Broadcast draw move to OTHER users only (exclude sender to prevent ping-pong)
+    socket.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_DRAW_MOVE, broadcastData);
+    socket.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_DRAW_MOVE, broadcastData);
   });
 
   // Handle drawing end and save stroke
@@ -296,18 +285,9 @@ const whiteboardHandler = (socket, io) => {
         version: updatedWhiteboard.version
       });
       
-      // AGGRESSIVELY broadcast to BOTH rooms and ALL possible sockets
-      io.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_STROKE_ADDED, broadcastData);
-      io.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_STROKE_ADDED, broadcastData);
-      
-      // Also emit to the sender directly as a fallback
-      socket.emit(SOCKET_EVENTS.WHITEBOARD_STROKE_ADDED, broadcastData);
-      
-      // Broadcast to individual sockets as additional fallback
-      roomSockets.forEach(s => {
-        console.log(`📤 Direct emit to socket ${s.id}`);
-        s.emit(SOCKET_EVENTS.WHITEBOARD_STROKE_ADDED, broadcastData);
-      });
+      // Broadcast stroke to OTHER users only (exclude sender to prevent ping-pong)
+      socket.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_STROKE_ADDED, broadcastData);
+      socket.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_STROKE_ADDED, broadcastData);
 
       console.log(`Stroke added to whiteboard ${gameId} by user ${socket.userId}, version: ${updatedWhiteboard.version}`);
     } catch (error) {
@@ -367,12 +347,9 @@ const whiteboardHandler = (socket, io) => {
       
       console.log(`📤 Broadcasting whiteboard clear to rooms: ${whiteboardRoom}, ${gameRoom}`);
       
-      // AGGRESSIVELY broadcast to BOTH rooms
-      io.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_CLEARED, broadcastData);
-      io.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_CLEARED, broadcastData);
-      
-      // Also emit to sender as fallback
-      socket.emit(SOCKET_EVENTS.WHITEBOARD_CLEARED, broadcastData);
+      // Broadcast clear to OTHER users only (exclude sender to prevent ping-pong)
+      socket.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_CLEARED, broadcastData);
+      socket.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_CLEARED, broadcastData);
 
       console.log(`Whiteboard ${gameId} cleared by user ${socket.userId}, version: ${updatedWhiteboard.version}`);
     } catch (error) {
@@ -398,12 +375,9 @@ const whiteboardHandler = (socket, io) => {
       timestamp: new Date()
     };
     
-    // AGGRESSIVELY broadcast to BOTH rooms
-    io.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_TOOL_CHANGE, broadcastData);
-    io.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_TOOL_CHANGE, broadcastData);
-    
-    // Also emit to sender as fallback
-    socket.emit(SOCKET_EVENTS.WHITEBOARD_TOOL_CHANGE, broadcastData);
+    // Broadcast tool change to OTHER users only (exclude sender to prevent ping-pong)
+    socket.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_TOOL_CHANGE, broadcastData);
+    socket.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_TOOL_CHANGE, broadcastData);
   });
 
   // Handle undo operation
@@ -439,12 +413,9 @@ const whiteboardHandler = (socket, io) => {
       
       console.log(`📤 Broadcasting undo to rooms: ${whiteboardRoom}, ${gameRoom}`);
       
-      // AGGRESSIVELY broadcast to BOTH rooms
-      io.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_UNDO, broadcastData);
-      io.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_UNDO, broadcastData);
-      
-      // Also emit to sender as fallback
-      socket.emit(SOCKET_EVENTS.WHITEBOARD_UNDO, broadcastData);
+      // Broadcast undo to OTHER users only (exclude sender to prevent ping-pong)
+      socket.to(whiteboardRoom).emit(SOCKET_EVENTS.WHITEBOARD_UNDO, broadcastData);
+      socket.to(gameRoom).emit(SOCKET_EVENTS.WHITEBOARD_UNDO, broadcastData);
 
       console.log(`Stroke ${strokeId} undone from whiteboard ${gameId} by user ${socket.userId}, version: ${updatedWhiteboard.version}`);
     } catch (error) {
@@ -456,6 +427,19 @@ const whiteboardHandler = (socket, io) => {
   // Request current whiteboard state
   socket.on(SOCKET_EVENTS.REQUEST_GAME_STATE, async ({ gameId }) => {
     try {
+      const whiteboardRoom = ROOM_NAMES.WHITEBOARD(gameId);
+      const gameRoom = ROOM_NAMES.GAME(gameId);
+      
+      // Join the whiteboard and game rooms if not already joined
+      if (!socket.rooms.has(whiteboardRoom)) {
+        socket.join(whiteboardRoom);
+        console.log(`📥 Socket ${socket.id} joined whiteboard room: ${whiteboardRoom}`);
+      }
+      if (!socket.rooms.has(gameRoom)) {
+        socket.join(gameRoom);
+        console.log(`📥 Socket ${socket.id} joined game room: ${gameRoom}`);
+      }
+      
       const whiteboard = await Whiteboard.findOne({ game: gameId })
         .populate('collaborators.user', 'name picture');
       
@@ -468,6 +452,8 @@ const whiteboardHandler = (socket, io) => {
           collaborators: whiteboard.collaborators,
           version: whiteboard.version
         });
+        
+        console.log(`📊 Sent whiteboard state: ${whiteboard.strokes.length} strokes, version ${whiteboard.version}`);
       }
     } catch (error) {
       console.error('Error syncing whiteboard state:', error);

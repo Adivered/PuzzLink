@@ -34,12 +34,8 @@ exports.getGameState = async (req, res) => {
 
 exports.updateGameState = async (req, res) => {
   try {
-    console.log("Updating Game")
     const { gameId } = req.params;
     const { pieceId, position } = req.body;
-    console.log("Game ID: ", gameId)
-    console.log("Piece ID: ", pieceId)
-    console.log("Position: ", position)
 
     const game = await Game.findById(gameId)
       .populate({
@@ -49,21 +45,15 @@ exports.updateGameState = async (req, res) => {
         }
       });
 
-    console.log("Game: ", game)
-
     if (!game) {
       return res.status(404).json({ message: 'Game not found' });
     }
-    console.log("Game Found")
-    console.log("game.puzzle.pieces: ",game.puzzle.pieces)
+    
     // Find and update the piece position
     const piece = game.puzzle.pieces.find(p => p._id.toString() === pieceId);
-    console.log("Piece: ", piece)
     if (!piece) {
       return res.status(404).json({ message: 'Piece not found' });
     }
-
-    console.log("Piece: ", piece)
 
     // Update piece position
     piece.currentPosition = position;

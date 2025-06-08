@@ -1,46 +1,73 @@
 // authController.js
 const asyncHandler = require("express-async-handler");
 const passport = require("passport");
-const User = require("../../models/User"); // Adjust path as needed
-const Room = require("../../models/Room"); // Add Room model
+const User = require("../../models/User");
+const Conversation = require("../../models/Conversation");
 
-// Helper function to ensure Home room exists and join user
-const ensureHomeRoomAndJoinUser = async (userId) => {
+// Cache for Home conversation ID to avoid repeated DB queries
+let cachedHomeConversationId = null;
+
+// Helper function to get or create Home conversation ID (cached)
+const getHomeConversationId = async () => {
+  if (cachedHomeConversationId) {
+    return cachedHomeConversationId;
+  }
+  
   try {
-    // Find or create the "Home" room
-    let homeRoom = await Room.findOne({ name: "Home" });
+    // Simple fast query - just find by groupName and isGroup
+    let homeConversation = await Conversation.findOne({ 
+      groupName: "Home",
+      isGroup: true 
+    }, '_id');
     
-    if (!homeRoom) {
-      // Create the Home room if it doesn't exist
-      // Use the first user as creator, or create a system user
-      homeRoom = new Room({
-        name: "Home",
-        creator: userId, // You might want to use a system user ID here
-        timeLimit: 60, // Default values for the Home room
-        difficulty: 'easy',
-        gameMode: 'puzzle',
-        turnBased: false,
-        status: 'waiting' // Home room is always waiting for new members
+    if (!homeConversation) {
+      // Create the global Home conversation with empty participants initially
+      homeConversation = new Conversation({
+        groupName: "Home",
+        isGroup: true,
+        participants: [], // Start empty for performance
+        createdBy: null // System conversation
       });
-      await homeRoom.save();
+      await homeConversation.save();
     }
     
-    // Add user to Home room if not already added
-    if (!homeRoom.players.includes(userId)) {
-      homeRoom.players.push(userId);
-      await homeRoom.save();
+    // Cache the ID for future requests
+    cachedHomeConversationId = homeConversation._id;
+    return cachedHomeConversationId;
+  } catch (error) {
+    console.error('Error getting Home conversation ID:', error);
+    return null;
+  }
+};
+
+// Helper function to ensure user is in Home conversation (only called during login)
+const ensureUserInHomeConversation = async (userId) => {
+  try {
+    const homeConversationId = await getHomeConversationId();
+    if (!homeConversationId) return null;
+    
+    // Check if user is already in the conversation
+    const userInConversation = await Conversation.findOne({
+      _id: homeConversationId,
+      participants: userId
+    }, '_id');
+    
+    if (!userInConversation) {
+      // Add user to Home conversation
+      await Conversation.findByIdAndUpdate(homeConversationId, {
+        $addToSet: { participants: userId } // Use $addToSet to avoid duplicates
+      });
     }
     
-    // Update user's online status and current room
+    // Update user's online status
     await User.findByIdAndUpdate(userId, {
       isOnline: true,
-      currentRoom: homeRoom._id,
       lastActive: new Date()
     });
     
-    return homeRoom;
+    return homeConversationId;
   } catch (error) {
-    console.error('Error ensuring Home room:', error);
+    console.error('Error ensuring user in Home conversation:', error);
     return null;
   }
 };
@@ -61,15 +88,20 @@ const loginUser = asyncHandler(async (req, res) => {
         throw new Error(err.message);
       }
       
-      // Auto-join Home room
-      const homeRoom = await ensureHomeRoomAndJoinUser(user._id);
+      // Ensure user is in Home conversation
+      const homeConversationId = await ensureUserInHomeConversation(user._id);
+      
+      // Store homeConversationId in session for fast access
+      req.session.homeConversationId = homeConversationId;
       
       res.json({
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        provider: user.provider,
-        homeRoomId: homeRoom?._id
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          provider: user.provider
+        },
+        homeConversationId
       });
     });
   })(req, res);
@@ -77,10 +109,11 @@ const loginUser = asyncHandler(async (req, res) => {
 
 const googleAuth = passport.authenticate("google", {
   scope: ["profile", "email"],
-  prompt: "select_account", // Always show account selector
-  accessType: "offline" // Request refresh token
+  prompt: "select_account",
+  accessType: "offline"
 });
 
+// Simplified googleCallback that handles everything in one place
 const googleCallback = (req, res, next) => {
   passport.authenticate("google", async (err, user, info) => {
     if (err) {
@@ -96,45 +129,41 @@ const googleCallback = (req, res, next) => {
         return res.redirect(`${process.env.CLIENT_URL}/login?error=Login failed`);
       }
 
-      // Auto-join Home room for Google OAuth users too
-      await ensureHomeRoomAndJoinUser(user._id);
+      // Ensure user is in Home conversation
+      const homeConversationId = await ensureUserInHomeConversation(user._id);
+      
+      // Store homeConversationId in session for fast access
+      req.session.homeConversationId = homeConversationId;
 
-      // Get return URL from session and remove it
-      const returnTo = req.session.returnTo || '/';
-      delete req.session.returnTo;
-      // Redirect to frontend with success
-      return res.redirect(`${process.env.CLIENT_URL}/`);
+      // Single redirect to home with success - frontend will get homeId from auth status
+      return res.redirect(`${process.env.CLIENT_URL}/?auth=success`);
     });
   })(req, res, next);
 };
 
-const getCurrentUser = asyncHandler(async (req, res) => {
-  if (!req.user) {
-    res.status(401);
-    throw new Error("Not authenticated");
-  }
-
-  // Ensure user is in Home room even when getting current user
-  const homeRoom = await ensureHomeRoomAndJoinUser(req.user._id);
-
-  res.json({
-    id: req.user._id,
-    name: req.user.name,
-    email: req.user.email,
-    provider: req.user.provider,
-    homeRoomId: homeRoom?._id
-  });
-});
-
+// SUPER FAST: No database queries at all!
 const checkAuthStatus = asyncHandler(async (req, res) => {
-  // Prevent caching to avoid 304 responses and ensure fresh auth state
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
   
   if (req.user) {
-    // Lightweight check - just get home room ID without any updates
-    const homeRoom = await Room.findOne({ name: "Home" }, '_id');
+    // Get homeConversationId from session (instant!) or use cached value
+    let homeConversationId = req.session.homeConversationId || cachedHomeConversationId;
+    
+    // If still no ID, try to get/create it (this should be rare)
+    if (!homeConversationId) {
+      console.log('⚠️ No homeConversationId in session/cache, fetching...');
+      homeConversationId = await ensureUserInHomeConversation(req.user._id);
+      
+      // Store in session for next time
+      if (homeConversationId) {
+        req.session.homeConversationId = homeConversationId;
+      } else {
+        console.error('❌ Failed to get/create Home conversation for user:', req.user._id);
+        return res.status(500).json({ error: 'Failed to initialize Home conversation' });
+      }
+    }
     
     res.json({
       authenticated: true,
@@ -142,9 +171,9 @@ const checkAuthStatus = asyncHandler(async (req, res) => {
         id: req.user._id,
         name: req.user.name,
         email: req.user.email,
-        provider: req.user.provider,
-        homeRoomId: homeRoom?._id
-      }
+        provider: req.user.provider
+      },
+      homeConversationId
     });
   } else {
     res.json({ 
@@ -156,10 +185,9 @@ const checkAuthStatus = asyncHandler(async (req, res) => {
 
 const logout = asyncHandler(async (req, res) => {
   if (req.user) {
-    // Update user offline status and remove from current room
+    // Update user offline status
     await User.findByIdAndUpdate(req.user._id, {
       isOnline: false,
-      currentRoom: null,
       lastActive: new Date()
     });
   }
@@ -184,7 +212,6 @@ module.exports = {
   loginUser,
   googleAuth,
   googleCallback,
-  getCurrentUser,
-  logout,
-  checkAuthStatus
+  checkAuthStatus,
+  logout
 };

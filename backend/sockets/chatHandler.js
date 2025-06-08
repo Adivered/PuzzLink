@@ -1,6 +1,7 @@
 const Message = require('../models/Message');
 const Conversation = require('../models/Conversation');
 const User = require('../models/User');
+const Room = require('../models/Room');
 
 // Helper function to get user display info for logging
 const getUserDisplayInfo = (socket) => {
@@ -77,6 +78,15 @@ const chatHandler = (socket, io) => {
           lastMessage: message._id,
           updatedAt: new Date()
         });
+      }
+
+      // Update room's embedded chat data if it's a room message
+      if (roomId) {
+        const room = await Room.findById(roomId);
+        if (room) {
+          await room.addMessage(message._id);
+          console.log(`📝 Added message ${message._id} to room ${roomId} embedded chat`);
+        }
       }
 
       // Emit to appropriate room/conversation

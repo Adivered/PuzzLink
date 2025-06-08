@@ -50,6 +50,11 @@ const conversationSchema = new mongoose.Schema({
 
 // Ensure participants array has at least 2 users for regular conversations
 conversationSchema.pre('save', function(next) {
+  // Special case for Home conversation - can have any number of participants
+  if (this.isGroup && this.groupName === 'Home') {
+    return next(); // Skip validation for Home conversation
+  }
+  
   if (!this.isGroup && this.participants.length !== 2) {
     return next(new Error('Regular conversations must have exactly 2 participants'));
   }
@@ -62,6 +67,10 @@ conversationSchema.pre('save', function(next) {
 // Index for better query performance
 conversationSchema.index({ participants: 1 });
 conversationSchema.index({ updatedAt: -1 });
+// Index for fast Home conversation lookup
+conversationSchema.index({ groupName: 1, isGroup: 1 });
+// Compound index for user-conversation lookups
+conversationSchema.index({ _id: 1, participants: 1 });
 
 // Populate participants and last message
 conversationSchema.pre('find', function(next) {

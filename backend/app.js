@@ -74,6 +74,7 @@ const roomRoutes = require('./routes/room');
 const profileRoutes = require('./routes/profile');
 const imageRoutes = require('./routes/image');
 const chatRoutes = require('./routes/chat');
+const adminRoutes = require('./routes/admin');
 
 app.use(authRoutes);
 app.use(gameRoutes);
@@ -82,6 +83,7 @@ app.use(roomRoutes);
 app.use(profileRoutes);
 app.use(imageRoutes);
 app.use(chatRoutes);
+app.use(adminRoutes);
 
 // Error handler
 app.use((err, req, res, next) => {

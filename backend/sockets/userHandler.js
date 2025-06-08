@@ -16,7 +16,29 @@ const sendInitialData = async (socket, userId) => {
   try {
     console.log(`📦 Sending initial data to user ${userId}`);
 
-    // Get user's conversations
+    // Ensure user is in Home conversation first (fast setup)
+    let homeConversation = await Conversation.findOne({ 
+      groupName: "Home",
+      isGroup: true 
+    });
+    
+    if (!homeConversation) {
+      // Create the global Home conversation
+      homeConversation = new Conversation({
+        groupName: "Home",
+        isGroup: true,
+        participants: [userId],
+        createdBy: userId
+      });
+      await homeConversation.save();
+    } else if (!homeConversation.participants.includes(userId)) {
+      // Add user to Home conversation if not already there
+      await Conversation.findByIdAndUpdate(homeConversation._id, {
+        $addToSet: { participants: userId }
+      });
+    }
+
+    // Get user's conversations (will now include Home)
     const conversations = await Conversation.find({
       participants: userId
     }).populate({
@@ -27,9 +49,8 @@ const sendInitialData = async (socket, userId) => {
       select: 'content sender createdAt messageType'
     }).sort({ updatedAt: -1 });
 
-    // Get user's rooms (including Home room and any rooms they're in)
+    // Get user's rooms (game rooms only)
     const user = await User.findById(userId).populate('currentRoom');
-    const homeRoom = await Room.findOne({ name: "Home" });
     
     // Get only the user's current room (if they have one)
     let currentRoomData = null;
@@ -41,19 +62,9 @@ const sendInitialData = async (socket, userId) => {
     }
     
     const roomDetails = {};
-    
-    // Add Home room details
-    if (homeRoom) {
-      roomDetails[homeRoom._id] = {
-        name: homeRoom.name,
-        description: homeRoom.description || 'Global community chat',
-        image: homeRoom.image,
-        onlineCount: 0 // Will be updated by room_users event
-      };
-    }
 
-    // Add details for ONLY the user's current room (if they have one and it's not Home)
-    if (currentRoomData && currentRoomData._id.toString() !== homeRoom?._id.toString()) {
+    // Add details for ONLY the user's current room (if they have one)
+    if (currentRoomData) {
       roomDetails[currentRoomData._id] = {
         _id: currentRoomData._id,
         name: currentRoomData.name,
@@ -86,22 +97,10 @@ const sendInitialData = async (socket, userId) => {
       messages[conversation._id] = conversationMessages.reverse(); // Oldest first
     }
 
-    // Get messages for Home room
-    if (homeRoom) {
-      const homeMessages = await Message.find({
-        room: homeRoom._id
-      }).populate('sender', 'name picture')
-        .sort({ createdAt: -1 })
-        .limit(50)
-        .lean();
-      
-      messages[homeRoom._id] = homeMessages.reverse(); // Oldest first
-    }
-
-    // Get messages for ONLY the user's current room (if they have one and it's not Home)
-    if (currentRoomData && currentRoomData._id.toString() !== homeRoom?._id.toString()) {
+    // Get messages for ONLY the user's current room (if they have one) using embedded approach
+    if (currentRoomData) {
       const roomMessages = await Message.find({
-        room: currentRoomData._id
+        _id: { $in: currentRoomData.messages || [] }
       }).populate('sender', 'name picture')
         .sort({ createdAt: -1 })
         .limit(50)
@@ -170,26 +169,27 @@ const userHandler = (socket, io) => {
       // Send initial data to eliminate API calls
       await sendInitialData(socket, userId);
       
-      // Auto-join Home room chat (global chat)
-      const homeRoom = await Room.findOne({ name: "Home" });
-      if (homeRoom) {
-        socket.join(`room_${homeRoom._id}`);
-        console.log(`   ✅ Auto-joined: ${homeRoom.name} (${homeRoom._id.toString().slice(-8)})`);
+      // Auto-join Home conversation (global chat)
+      const homeConversation = await Conversation.findOne({ 
+        groupName: "Home",
+        isGroup: true 
+      });
+      if (homeConversation) {
+        socket.join(`conversation_${homeConversation._id}`);
+        console.log(`   ✅ Auto-joined: Home (${homeConversation._id.toString().slice(-8)})`);
+      }
         
-        // Auto-join current room only if it's different from Home and user was offline
-        if (user.currentRoom && 
-            user.currentRoom._id.toString() !== homeRoom?._id.toString() && 
-            wasOffline) {
-          socket.join(`room_${user.currentRoom._id}`);
-          console.log(`   ✅ Auto-joined: ${user.currentRoom.name} (${user.currentRoom._id.toString().slice(-8)})`);
-          
-          socket.to(`room_${user.currentRoom._id}`).emit('user_joined_room', {
-            userId,
-            userName: user.name,
-            roomId: user.currentRoom._id,
-            roomName: user.currentRoom.name
-          });
-        }
+      // Auto-join current room if user has one and was offline
+      if (user.currentRoom && wasOffline) {
+        socket.join(`room_${user.currentRoom._id}`);
+        console.log(`   ✅ Auto-joined: ${user.currentRoom.name} (${user.currentRoom._id.toString().slice(-8)})`);
+        
+        socket.to(`room_${user.currentRoom._id}`).emit('user_joined_room', {
+          userId,
+          userName: user.name,
+          roomId: user.currentRoom._id,
+          roomName: user.currentRoom.name
+        });
       }
       
       // Only broadcast user online status if they were previously offline
@@ -205,7 +205,7 @@ const userHandler = (socket, io) => {
       const activeConnections = userConnections.get(userId)?.size || 0;
       console.log(`✅ ${user.email} fully connected (${activeConnections} active connection${activeConnections !== 1 ? 's' : ''})`);
       
-      // Check for pending room invitations and send them
+      // Check for pending room invitations and send them only if they weren't just sent
       const roomsWithPendingInvitations = await Room.find({
         pendingInvitations: userId
       }).populate('creator', 'name');
@@ -213,15 +213,19 @@ const userHandler = (socket, io) => {
       if (roomsWithPendingInvitations.length > 0) {
         console.log(`📬 Found ${roomsWithPendingInvitations.length} pending invitations for user ${userId}`);
         
+        // Only send invitations for rooms created more than 5 seconds ago (to avoid duplicate sends)
+        const now = new Date();
         for (const room of roomsWithPendingInvitations) {
-          // Send the pending invitation
-          socket.emit('room_invitation', {
-            roomId: room._id,
-            inviterName: room.creator.name,
-            timestamp: room.createdAt
-          });
-          
-          console.log(`📨 Sent pending invitation to ${userId} for room ${room._id} from ${room.creator.name}`);
+          const timeSinceCreation = now - room.createdAt;
+          if (timeSinceCreation > 5000) { // 5 seconds
+            socket.emit('room_invitation', {
+              roomId: room._id,
+              inviterName: room.creator.name,
+              timestamp: room.createdAt
+            });
+            
+            console.log(`📨 Sent pending invitation to ${userId} for room ${room._id} from ${room.creator.name}`);
+          }
         }
       }
     } catch (error) {
@@ -362,9 +366,9 @@ const userHandler = (socket, io) => {
           // Update user's current room
           await User.findByIdAndUpdate(userId, { currentRoom: newRoomId });
           
-          // Send room data to the user who just joined
+          // Send room data to the user who just joined - use embedded room messages
           const roomMessages = await Message.find({
-            room: newRoomId
+            _id: { $in: newRoom.messages || [] }
           }).populate('sender', 'name picture')
             .sort({ createdAt: -1 })
             .limit(50)

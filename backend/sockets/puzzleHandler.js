@@ -6,7 +6,6 @@ const puzzleHandler = (socket, io) => {
   // Get puzzle state (called when puzzle component loads)
   socket.on('get_puzzle_state', async ({ gameId }) => {
     try {
-      console.log(`🧩 User ${socket.userId} requesting puzzle state for game: ${gameId}`);
       
       // Get game with populated puzzle data
       const game = await Game.findById(gameId)
@@ -222,43 +221,27 @@ const puzzleHandler = (socket, io) => {
         }
       }
       
-      // Update the main piece
-      const updatedPiece = await PieceSchema.findByIdAndUpdate(
-        pieceId,
-        {
-          currentPosition: toPosition,
-          $expr: {
-            $cond: {
-              if: { $and: [
-                { $ne: [toPosition, null] },
-                { $ne: ['$position', null] }
-              ]},
-              then: {
-                $and: [
-                  { $eq: ['$position.row', toPosition.row] },
-                  { $eq: ['$position.col', toPosition.col] }
-                ]
-              },
-              else: false
-            }
-          }
-        },
-        { new: true, select: 'isCorrectlyPlaced currentPosition position' }
-      );
-      
-      if (!updatedPiece) {
+      // Get the piece first to check its correct position
+      const piece = await PieceSchema.findById(pieceId).select('position');
+      if (!piece) {
         socket.emit('puzzle_error', { message: 'Piece not found' });
         return;
       }
       
-      // Update correctly placed status
-      const isCorrectlyPlaced = toPosition && updatedPiece.position && 
-        updatedPiece.position.row === toPosition.row && 
-        updatedPiece.position.col === toPosition.col;
+      // Calculate if the piece will be correctly placed
+      const isCorrectlyPlaced = toPosition && piece.position && 
+        piece.position.row === toPosition.row && 
+        piece.position.col === toPosition.col;
       
-      if (updatedPiece.isCorrectlyPlaced !== isCorrectlyPlaced) {
-        await PieceSchema.findByIdAndUpdate(pieceId, { isCorrectlyPlaced });
-      }
+      // Update the piece with both position and correctness
+      const updatedPiece = await PieceSchema.findByIdAndUpdate(
+        pieceId,
+        {
+          currentPosition: toPosition,
+          isCorrectlyPlaced: isCorrectlyPlaced
+        },
+        { new: true, select: 'isCorrectlyPlaced currentPosition position' }
+      );
       
       // Increment move counter efficiently
       const gameUpdate = await Game.findByIdAndUpdate(
@@ -456,14 +439,21 @@ const puzzleHandler = (socket, io) => {
     }
   });
 
-  // Handle leave room from game
-  socket.on('leave_room', async ({ gameId }) => {
+  // Handle leave room from game - use a different event name to avoid conflicts
+  socket.on('leave_game_room', async ({ gameId }) => {
     try {
       console.log(`👋 User ${socket.userId} leaving game ${gameId}`);
+      
+      // Validate gameId to prevent undefined errors
+      if (!gameId) {
+        console.warn(`⚠️ Invalid gameId (${gameId}) for leave_game_room`);
+        return;
+      }
       
       // Get the game to find the room
       const game = await Game.findById(gameId).populate('room');
       if (!game || !game.room) {
+        console.warn(`⚠️ Game ${gameId} or room not found`);
         socket.emit('puzzle_error', { message: 'Game or room not found' });
         return;
       }

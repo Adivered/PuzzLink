@@ -52,11 +52,10 @@ const roomHandler = (socket, io) => {
       // Handle both string and object formats
       const roomId = typeof data === 'string' ? data : data.roomId;
       
-      // Update user's current room (set to null or back to Home)
+      // Update user's current room (set to null since Home is now a conversation)
       if (socket.userId) {
-        const homeRoom = await Room.findOne({ name: "Home" });
         await User.findByIdAndUpdate(socket.userId, {
-          currentRoom: homeRoom?._id || null,
+          currentRoom: null,
           lastActive: new Date()
         });
       }
@@ -206,9 +205,9 @@ const roomHandler = (socket, io) => {
         // Get the user who just joined
         const user = await User.findById(socket.userId);
         
-        // OPTIMIZATION: Get room messages only once
+        // Get room messages from embedded room messages
         const roomMessages = await Message.find({
-          room: roomId
+          _id: { $in: updatedRoom.messages }
         }).populate('sender', 'name picture')
           .sort({ createdAt: -1 })
           .limit(50)
@@ -310,9 +309,9 @@ const roomHandler = (socket, io) => {
         return;
       }
       
-      // Get recent messages for this room
+      // Get recent messages from embedded room messages
       const roomMessages = await Message.find({
-        room: roomId
+        _id: { $in: room.messages }
       }).populate('sender', 'name picture')
         .sort({ createdAt: -1 })
         .limit(50)

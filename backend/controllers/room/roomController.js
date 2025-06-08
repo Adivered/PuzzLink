@@ -7,9 +7,6 @@ const Whiteboard = require('../../models/Whiteboard');
 
 exports.createRoom = async (req, res) => {
   try {
-    // console.log("Headers:", req.headers);
-    console.log("Body:", req.body);
-    console.log("Files:", req.files || req.file);
     const { roomName, players, gameMode, timeLimit, turnBased } = req.body;
     let imagePath = null;
     
@@ -24,7 +21,6 @@ exports.createRoom = async (req, res) => {
       try {
         const parsedPlayers = JSON.parse(players);
         invitedPlayerIds = parsedPlayers.map(player => player._id);
-        console.log("Parsed invited player IDs:", invitedPlayerIds);
       } catch (error) {
         console.error("Error parsing players JSON:", error);
         return res.status(400).json({ message: 'Invalid players data format' });
@@ -33,7 +29,7 @@ exports.createRoom = async (req, res) => {
     
     // Create room with only the creator as a player initially
     // Invited users will be added when they accept the invitation
-    let room = new Room({
+    const room = await Room.create({
       name: roomName,
       creator: req.user._id,
       players: [req.user._id], // Only creator initially
@@ -44,13 +40,11 @@ exports.createRoom = async (req, res) => {
       status: 'waiting',
       pendingInvitations: invitedPlayerIds, // Store pending invitations
     });
-    room = await room.save();
     
     // Update current room for the creator only
     await User.findByIdAndUpdate(req.user._id, {
       currentRoom: room._id,
     });
-    console.log("Updating creator room: ", req.user._id);
     
     // Send invitations to invited players
     const io = req.app.get('io');
@@ -68,26 +62,13 @@ exports.createRoom = async (req, res) => {
         
         if (creatorSocket) {
           creatorSocket.join(`room_${room._id}`);
-          console.log(`🏠 Room creator ${req.user._id} joined room socket: room_${room._id}`);
-          
-          // Verify they're in the room socket
-          const roomSocketName = `room_${room._id}`;
-          const socketsInRoom = io.sockets.adapter.rooms.get(roomSocketName);
-          console.log(`   - Sockets in room socket after creator join: ${socketsInRoom ? socketsInRoom.size : 0}`);
         }
-      } else {
-        console.log(`⚠️ Room creator ${req.user._id} not found in personal socket room`);
       }
     }
     if (io && invitedPlayerIds.length > 0) {
       for (const playerId of invitedPlayerIds) {
         // Check if recipient is connected to their personal room
         const recipientRoom = `user_${playerId}`;
-        const recipientSockets = io.sockets.adapter.rooms.get(recipientRoom);
-        
-        console.log(`🔍 Sending invitation to ${playerId}:`);
-        console.log(`   - Personal room: ${recipientRoom}`);
-        console.log(`   - Connected sockets: ${recipientSockets ? recipientSockets.size : 0}`);
         
         // Send invitation regardless of connection status
         // If user is offline, they'll get it when they come online
@@ -96,19 +77,16 @@ exports.createRoom = async (req, res) => {
           inviterName: req.user.name,
           timestamp: new Date()
         });
-        
-        console.log(`Room invitation sent to user ${playerId} for room ${room._id}`);
       }
     }
     
     // Populate and return the room
-    room = await Room.findById(room._id)
+    const populatedRoom = await Room.findById(room._id)
       .populate('creator', 'name picture isOnline lastActive')
       .populate('players', 'name picture currentRoom isOnline lastActive');
 
-    res.status(201).json(room);
+    res.status(201).json(populatedRoom);
   } catch (error) {
-    console.log("Error: ", error.message)
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
@@ -138,7 +116,6 @@ exports.joinRoom = async (req, res) => {
 
 exports.startGame = async (req, res) => {
   try {
-    console.log("Request: (start) ", req.params, req.body)
     const { roomId } = req.params;
     const room = await Room.findById(roomId);
     if (!room) {
@@ -148,8 +125,6 @@ exports.startGame = async (req, res) => {
     if (room.creator.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Only the creator can start the game' });
     }
-
-    console.log("Room found: ", room)
 
     try{
       let game;
@@ -219,17 +194,33 @@ exports.startGame = async (req, res) => {
         });
         
         await game.save();
-        console.log("Puzzle game created: ", game);
       }
       
       room.status = 'inProgress';
       room.currentGame = game._id;
       await room.save();
 
+      // Get socket.io instance and emit game starting countdown
+      const io = req.app.get('io');
+      if (io) {
+        // Emit game starting with countdown
+        io.to(`room_${roomId}`).emit('game_starting', {
+          roomId,
+          countdown: 3
+        });
+
+        // After 3 seconds, emit game started
+        setTimeout(() => {
+          io.to(`room_${roomId}`).emit('game_started', {
+            roomId,
+            gameId: game._id
+          });
+        }, 3000);
+      }
+
       res.json({ message: 'Game started', gameId: game._id });
     }
     catch(e){
-      console.log("Error: ", e)
       res.status(500).json({ message: 'Server error', error: e.message });
     }
   } catch (error) {
@@ -285,8 +276,6 @@ exports.removePlayer = async (req, res) => {
     });
     
     if (!playerInRoom) {
-      console.log('Player not found in room. Room players:', room.players.map(p => p._id || p));
-      console.log('Trying to remove player:', playerId);
       return res.status(400).json({ message: 'Player is not in this room' });
     }
     
@@ -305,10 +294,9 @@ exports.removePlayer = async (req, res) => {
       { new: true }
     ).populate('players', 'name picture currentRoom isOnline lastActive');
     
-    // Update the removed player's current room to null or Home room
-    const homeRoom = await Room.findOne({ name: "Home" });
+    // Update the removed player's current room to null (Home is now a conversation)
     await User.findByIdAndUpdate(playerId, {
-      currentRoom: homeRoom?._id || null
+      currentRoom: null
     });
     
     // Notify all room members about the player removal via socket
@@ -323,7 +311,6 @@ exports.removePlayer = async (req, res) => {
       });
     }
     
-    console.log(`Player ${playerId} (${playerToRemove?.name}) removed from room ${roomId} by ${req.user.name}`);
     res.json(updatedRoom);
   } catch (error) {
     console.error('Error removing player:', error);
@@ -359,8 +346,22 @@ exports.inviteToRoom = async (req, res) => {
       !room.players.includes(userId) && !room.pendingInvitations.includes(userId)
     );
     
+
+    
     if (newInvitations.length === 0) {
-      return res.status(400).json({ message: 'All specified users are already in the room or have pending invitations' });
+      // More specific error messages
+      const alreadyInRoom = userIds.filter(userId => room.players.includes(userId));
+      const alreadyInvited = userIds.filter(userId => room.pendingInvitations.includes(userId));
+      
+      let message = 'Cannot send invitations: ';
+      if (alreadyInRoom.length > 0) {
+        message += `${alreadyInRoom.length} user(s) already in room. `;
+      }
+      if (alreadyInvited.length > 0) {
+        message += `${alreadyInvited.length} user(s) already have pending invitations.`;
+      }
+      
+      return res.status(400).json({ message: message.trim() });
     }
     
     // Add to pending invitations
@@ -375,17 +376,12 @@ exports.inviteToRoom = async (req, res) => {
         const recipientRoom = `user_${userId}`;
         const recipientSockets = io.sockets.adapter.rooms.get(recipientRoom);
         
-        console.log(`🔍 Sending invitation to ${userId}:`);
-        console.log(`   - Connected sockets: ${recipientSockets ? recipientSockets.size : 0}`);
-        
         // Send invitation (will be received if user is online, stored for later if offline)
         io.to(recipientRoom).emit('room_invitation', {
           roomId: room._id,
           inviterName: req.user.name,
           timestamp: new Date()
         });
-        
-        console.log(`Room invitation sent to user ${userId} for room ${room._id}`);
       }
     }
     
@@ -497,7 +493,6 @@ exports.updateRoom = async (req, res) => {
       });
     }
     
-    console.log(`Room ${roomId} settings updated by ${req.user.name}:`, updateData);
     res.json(updatedRoom);
   } catch (error) {
     console.error('Error updating room settings:', error);
